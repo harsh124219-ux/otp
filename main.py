@@ -102,6 +102,9 @@ async def cb_h(client, callback: CallbackQuery):
             SUPPORT_TEXT,
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="back_to_main")]])
         )
+    elif data.startswith("sort_opts_"):
+        from handlers.shop import sort_options_menu
+        await sort_options_menu(client, callback)
     elif data.startswith("view_country_"):
         await view_country_accounts(client, callback)
     elif data.startswith("buy_acc_"):
