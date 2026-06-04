@@ -13,8 +13,7 @@ user_states = {}
 async def safe_edit(callback: CallbackQuery, text: str, markup: InlineKeyboardMarkup):
     """
     Always tries to EDIT the existing message.
-    Falls back to replying only if edit truly fails (e.g. message was deleted).
-    This keeps the chat clean — no new messages on navigation.
+    Falls back to replying only if edit truly fails.
     """
     try:
         await callback.message.edit_text(text, reply_markup=markup)
@@ -41,10 +40,8 @@ def _main_menu_markup() -> InlineKeyboardMarkup:
 async def start(client: Client, update):
     """
     Handles /start (Message) and back_to_main (CallbackQuery).
-    FSub is checked here so it covers both paths.
     """
     is_cb = isinstance(update, CallbackQuery)
-    # For fsub check we need the real Message object
     message_obj = update.message if is_cb else update
 
     from handlers.fsub import check_fsub
@@ -90,13 +87,18 @@ async def help_detail(client: Client, callback: CallbackQuery):
 
 # ─────────────────────────────────────────────────────────────
 #  Profile
+#  FIX BUG 3: handles both Message (/balance, /profile) and CallbackQuery
 # ─────────────────────────────────────────────────────────────
 
-async def profile_menu(client: Client, callback: CallbackQuery):
-    user   = get_user(callback.from_user.id)
-    orders = get_user_orders(callback.from_user.id)
+async def profile_menu(client: Client, update):
+    is_cb = isinstance(update, CallbackQuery)
+    # Resolve the correct user object regardless of update type
+    from_user = update.from_user if is_cb else update.from_user
+
+    user   = get_user(from_user.id)
+    orders = get_user_orders(from_user.id)
     text   = PROFILE_TEXT.format(
-        name=callback.from_user.first_name,
+        name=from_user.first_name,
         balance=user.get("balance", 0) if user else 0,
         total_spent=user.get("total_spent", 0) if user else 0,
         total_purchases=len(orders)
@@ -105,18 +107,21 @@ async def profile_menu(client: Client, callback: CallbackQuery):
         [InlineKeyboardButton("💵 Deposit", callback_data="open_deposit")],
         [InlineKeyboardButton("🔙 Back",    callback_data="back_to_main")]
     ])
-    await safe_edit(callback, text, markup)
+
+    if is_cb:
+        await safe_edit(update, text, markup)
+    else:
+        await update.reply_text(text, reply_markup=markup)
 
 
 # ─────────────────────────────────────────────────────────────
 #  Deposit
+#  FIX BUG 2: handles both Message (/addbalance) and CallbackQuery
 # ─────────────────────────────────────────────────────────────
 
-async def deposit_menu(client: Client, callback: CallbackQuery):
-    """
-    Deposit is intentionally a NEW message because it may include a UPI photo.
-    We delete the old message to keep chat clean, then send fresh.
-    """
+async def deposit_menu(client: Client, update):
+    is_cb = isinstance(update, CallbackQuery)
+
     config    = get_config()
     upi_id    = config.get("upi_id", "Not Set")
     upi_name  = config.get("upi_name", "")
@@ -136,37 +141,60 @@ async def deposit_menu(client: Client, callback: CallbackQuery):
         [InlineKeyboardButton("❌ Cancel", callback_data="cancel_deposit")]
     ])
 
-    # Delete the old navigation message first
-    try:
-        await callback.message.delete()
-    except Exception:
-        pass
+    user_id = update.from_user.id
 
-    # Send fresh (potentially with photo)
-    if upi_image:
+    if is_cb:
+        # CallbackQuery path — delete old message, send fresh
         try:
-            await callback.message.reply_photo(
-                photo=upi_image, caption=text, reply_markup=markup
-            )
+            await update.message.delete()
         except Exception:
-            await callback.message.reply_text(text, reply_markup=markup)
-    else:
-        await callback.message.reply_text(text, reply_markup=markup)
+            pass
 
-    user_states[callback.from_user.id] = {"step": "waiting_amount"}
-    await callback.answer()
+        if upi_image:
+            try:
+                await update.message.reply_photo(
+                    photo=upi_image, caption=text, reply_markup=markup
+                )
+            except Exception:
+                await update.message.reply_text(text, reply_markup=markup)
+        else:
+            await update.message.reply_text(text, reply_markup=markup)
+
+        await update.answer()
+
+    else:
+        # Message path — /addbalance command
+        if upi_image:
+            try:
+                await update.reply_photo(
+                    photo=upi_image, caption=text, reply_markup=markup
+                )
+            except Exception:
+                await update.reply_text(text, reply_markup=markup)
+        else:
+            await update.reply_text(text, reply_markup=markup)
+
+    user_states[user_id] = {"step": "waiting_amount"}
 
 
 # ─────────────────────────────────────────────────────────────
 #  Orders
+#  FIX BUG 8: handles both Message (/orders) and CallbackQuery
 # ─────────────────────────────────────────────────────────────
 
-async def orders_menu(client: Client, callback: CallbackQuery):
-    orders = get_user_orders(callback.from_user.id)
+async def orders_menu(client: Client, update):
+    is_cb = isinstance(update, CallbackQuery)
+    user_id = update.from_user.id
+
+    orders = get_user_orders(user_id)
     back   = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="back_to_main")]])
 
     if not orders:
-        await safe_edit(callback, "📦 **MY ORDERS**\n\n❌ You have no orders yet.", back)
+        text = "📦 **MY ORDERS**\n\n❌ You have no orders yet."
+        if is_cb:
+            await safe_edit(update, text, back)
+        else:
+            await update.reply_text(text, reply_markup=back)
         return
 
     buttons = []
@@ -176,7 +204,13 @@ async def orders_menu(client: Client, callback: CallbackQuery):
         buttons.append([InlineKeyboardButton(label, callback_data=f"get_otp_{o['order_id']}")])
 
     buttons.append([InlineKeyboardButton("🔙 Back", callback_data="back_to_main")])
-    await safe_edit(callback, "📦 **MY ORDERS**\n\nTap an order to fetch OTP:", InlineKeyboardMarkup(buttons))
+    text   = "📦 **MY ORDERS**\n\nTap an order to fetch OTP:"
+    markup = InlineKeyboardMarkup(buttons)
+
+    if is_cb:
+        await safe_edit(update, text, markup)
+    else:
+        await update.reply_text(text, reply_markup=markup)
 
 
 # ─────────────────────────────────────────────────────────────
