@@ -5,7 +5,9 @@ from database import (
     get_transaction, is_admin
 )
 from info import LOG_GROUP
-from handlers.admin import admin_states # Reusing state tracker for uniformity
+
+# State tracker for capturing dynamic rejection reasons
+payment_admin_states = {}
 
 async def payment_callback(client: Client, callback: CallbackQuery):
     await callback.answer()
@@ -16,7 +18,7 @@ async def payment_callback(client: Client, callback: CallbackQuery):
 
     data = callback.data
 
-    # ── APPROVE ─────────────────────────────
+    # ── APPROVE TRANSACTION ─────────────────────────────
     if data.startswith("approve_"):
         parts = data.split("_")
         utr = parts[1]
@@ -35,7 +37,6 @@ async def payment_callback(client: Client, callback: CallbackQuery):
         update_transaction_status(utr, "approved")
 
         try:
-            # Edit original message in Log Group
             await callback.message.edit_caption(
                 (callback.message.caption or "") + "\n\n✅ **APPROVED BY ADMIN**"
             )
@@ -48,10 +49,10 @@ async def payment_callback(client: Client, callback: CallbackQuery):
                 f"✅ **Payment Approved!**\n\n"
                 f"An amount of ₹{amount} has been added to your wallet balance."
             )
-        except Exception as e:
-            print(f"Failed to notify user {user_id}: {e}")
+        except Exception:
+            pass
 
-    # ── REJECT (START PROCESS) ──────────────────────────────
+    # ── REJECT TRANSACTION ──────────────────────────────
     elif data.startswith("reject_"):
         parts = data.split("_")
         utr = parts[1]
@@ -65,9 +66,8 @@ async def payment_callback(client: Client, callback: CallbackQuery):
             await callback.answer("Already rejected!", show_alert=True)
             return
 
-        # Prompt the admin to provide a reason for rejection
-        admin_states[callback.from_user.id] = {
-            "step": "waiting_rejection_reason",
+        # Save context state and ask admin for a reason
+        payment_admin_states[callback.from_user.id] = {
             "utr": utr,
             "user_id": user_id,
             "log_message": callback.message
@@ -75,15 +75,15 @@ async def payment_callback(client: Client, callback: CallbackQuery):
         
         await client.send_message(
             chat_id=callback.from_user.id,
-            text=f"💬 Please reply with the **reason** for rejecting UTR `{utr}`:"
+            text=f"💬 Please reply to this message with the **reason** for rejecting UTR `{utr}`:"
         )
 
-# Call this from your message dispatcher inside main.py if an admin message is captured under state "waiting_rejection_reason"
-async def handle_rejection_reason_input(client: Client, message: Message):
+# Call this from your main.py message handler if payment_admin_states contains the user's ID
+async def handle_admin_rejection_reason(client: Client, message: Message):
     admin_id = message.from_user.id
-    state = admin_states.get(admin_id)
+    state = payment_admin_states.get(admin_id)
     
-    if not state or state.get("step") != "waiting_rejection_reason":
+    if not state:
         return
 
     reason = message.text.strip()
@@ -94,7 +94,7 @@ async def handle_rejection_reason_input(client: Client, message: Message):
     update_transaction_status(utr, "rejected")
 
     try:
-        # Update logs status in the Log Group
+        # Edit layout inside the log group
         await log_message.edit_caption(
             (log_message.caption or "") + f"\n\n❌ **REJECTED BY ADMIN**\n📝 **Reason:** {reason}"
         )
@@ -102,16 +102,16 @@ async def handle_rejection_reason_input(client: Client, message: Message):
         pass
 
     try:
-        # Pass the exact reason down to the customer
+        # Pass identical reason data to the user
         await client.send_message(
             user_id,
             f"❌ **Payment Rejected**\n\n"
-            f"Your payment validation request for UTR `{utr}` was rejected by the manager.\n\n"
-            f"📝 **Reason Given:** {reason}\n\n"
-            f"Please double-check your inputs or contact help support."
+            f"Your payment with UTR `{utr}` was rejected by the administrator.\n\n"
+            f"⚠️ **Reason:** {reason}\n\n"
+            f"Please review your transaction details or try again with proper proof."
         )
-        await message.reply_text("✅ Rejection reason recorded and user notified.")
+        await message.reply_text("✅ Rejection reason sent to the user.")
     except Exception as e:
-        await message.reply_text(f"⚠️ Saved, but couldn't message user: {e}")
+        await message.reply_text(f"⚠️ Saved, but couldn't message user directly: {e}")
 
-    admin_states.pop(admin_id, None)
+    payment_admin_states.pop(admin_id, None)
