@@ -99,6 +99,20 @@ async def buy_account(client: Client, callback: CallbackQuery):
     update_account_status(phone, "sold")
     order_id = create_order(user_id, phone, account["session_string"], account["country"], price)
 
+    # SUCCESS LOG SENT TO LOG GROUP IMMEDIATELY UPON PURCHASE
+    log_text = (
+        f"🛒 🛍️ **NEW COMPLETED SALE DONE**\n\n"
+        f"👤 **Buyer ID:** `{user_id}`\n"
+        f"📱 **Phone Number:** `{phone}`\n"
+        f"🌍 **Country Pool:** {account['country']}\n"
+        f"💰 **Final Price Paid:** ₹{price}\n"
+        f"📅 **Date:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+    )
+    try:
+        await client.send_message(chat_id=LOG_GROUP, text=log_text)
+    except Exception as e:
+        print(f"Failed to send purchase log: {e}")
+
     await callback.message.edit_text(
         f"🎉 **Purchase Successful!**\n\n📱 Number: `{phone}`\n💰 Cost: ₹{price}\n\n"
         f"Go to **My Orders** section to request your code updates.",
@@ -169,20 +183,22 @@ async def logout_acc_logic(client: Client, callback: CallbackQuery):
         await user_client.log_out()
         close_order(order_id)
 
-        # Enhanced operational delivery confirmation metadata sent directly to the logging group
+        # LOG ENTITY SENT TO LOG GROUP UPON ACCOUNT LOGOUT
         log_text = (
-            f"🛒 🛍️ **NEW COMPLETED SALE DONE**\n\n"
-            f"👤 **Buyer ID:** `{order['user_id']}`\n"
+            f"🚪 **USER LOGGED OUT FROM ACCOUNT**\n\n"
+            f"👤 **User ID:** `{order['user_id']}`\n"
             f"📱 **Phone Number:** `{order['phone']}`\n"
             f"🌍 **Country Pool:** {order['country']}\n"
-            f"💰 **Final Price Paid:** ₹{order['price']}\n"
             f"📅 **Date:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         )
-        await client.send_message(chat_id=LOG_GROUP, text=log_text)
+        try:
+            await client.send_message(chat_id=LOG_GROUP, text=log_text)
+        except Exception as e:
+            print(f"Failed to send logout log: {e}")
 
         await callback.message.edit_text(
             f"✅ Successfully logged out from account `{order['phone']}`. Session is now finalized.",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back_to_main")]])
         )
     except Exception as e:
-        await callback.message.reply_text(f"❌ Session closure issue: `{e}`")
+        await callback.message.edit_text(f"❌ Session closure issue: `{e}`")
