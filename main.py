@@ -83,8 +83,6 @@ async def cb_h(client, callback: CallbackQuery):
             SUPPORT_TEXT,
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="back_to_main")]])
         )
-
-    # Shop & Account Logic
     elif data.startswith("view_country_"):
         await view_country_accounts(client, callback)
     elif data.startswith("buy_acc_"):
@@ -93,12 +91,8 @@ async def cb_h(client, callback: CallbackQuery):
         await get_otp_logic(client, callback)
     elif data.startswith("logout_acc_"):
         await logout_acc_logic(client, callback)
-
-    # Payment (Admin)
     elif data.startswith("approve_") or data.startswith("reject_"):
         await payment_callback(client, callback)
-
-    # UPI image set (Admin)
     elif data == "set_upi_image":
         from handlers.admin import set_upi_image_start
         await set_upi_image_start(client, callback)
