@@ -88,11 +88,7 @@ USER_HELP = """
 👤 **USER COMMANDS**
 
 • /start - Start the bot & Main menu
-• /profile - View your account details
 • /shop - Buy Telegram accounts
-• /orders - View your active accounts & OTPs
-• /deposit - Add funds to your wallet
-• /rules - Read our guidelines
 • /help - Show this menu
 """
 
