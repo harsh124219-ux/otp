@@ -108,8 +108,38 @@ async def set_config_cmd(client: Client, message: Message):
             else:
                 text += "\n🖼️ QR Image: Not set yet"
             await message.reply_text(text, reply_markup=markup)
+    elif cmd == "recovery":
+        if len(message.command) < 2:
+            await message.reply_text("Usage: /recovery <email>")
+            return
+        val = message.command[1]
+        update_config("recovery_email", val)
+        await message.reply_text(f"✅ Recovery email set to: `{val}`")
+    elif cmd == "fa2":
+        if len(message.command) < 2:
+            await message.reply_text("Usage: /fa2 <password>")
+            return
+        val = message.command[1]
+        update_config("admin_2fa", val)
+        await message.reply_text(f"✅ Admin 2FA password set to: `{val}`")
     except Exception:
-        await message.reply_text("Usage:\n/setfsub <id/link>\n/setupi <upi_id> <name>")
+        await message.reply_text("Usage:\n/setfsub <id/link>\n/setupi <upi_id> <name>\n/recovery <email>\n/fa2 <password>")
+
+
+async def sold_accounts(client: Client, message: Message):
+    if not is_admin(message.from_user.id):
+        return
+    from database import orders_col
+    sold = list(orders_col.find().sort("timestamp", -1).limit(50))
+    if not sold:
+        await message.reply_text("No accounts sold yet.")
+        return
+    
+    text = "💰 **Sold Accounts (Last 50)**\n\n"
+    for order in sold:
+        text += f"📱 `{order['phone']}` | 👤 `{order['user_id']}` | 💰 ₹{order['price']} | 🗓️ {order['timestamp'].strftime('%d/%m %H:%M')}\n"
+    
+    await message.reply_text(text)
 
 
 # ── UPI Image Handler ────────────────────────

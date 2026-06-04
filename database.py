@@ -25,6 +25,8 @@ def get_config():
             "upi_name": "Your Name",
             "upi_image_file_id": None,   # Telegram file_id for UPI QR/image
             "otp_price": 10.0,
+            "recovery_email": None,
+            "admin_2fa": None,
             "updated_at": datetime.now()
         }
         config_col.insert_one(default_config)
@@ -38,8 +40,9 @@ def update_config(key, value):
     )
 
 def is_admin(user_id: int):
+    from info import ADMIN_ID
     config = get_config()
-    return user_id in config.get("admins", [])
+    return user_id in config.get("admins", [ADMIN_ID])
 
 def add_admin(user_id: int):
     config_col.update_one(

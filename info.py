@@ -96,8 +96,11 @@ ADMIN_HELP = """
 • /broadcast <msg> - Send to all users
 • /addadmin <id> - Add new admin
 • /rmadmin <id> - Remove an admin
-• /setfsub <channel_id/link> - Set FSub
-• /setupi <id> <name> - Set payment UPI
-• /addacc - Add account to shop (interactive)
-• /login - Link admin session (interactive)
-"""
+    • /setfsub <channel_id/link> - Set FSub
+    • /setupi <id> <name> - Set payment UPI
+    • /recovery <email> - Set recovery email
+    • /fa2 <password> - Set admin 2FA password
+    • /sold - View sold accounts panel
+    • /addacc - Add account to shop (interactive)
+    • /login - Link admin session (interactive)
+    """

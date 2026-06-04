@@ -29,7 +29,7 @@ async def start_h(client, message):
 async def help_h(client, message):
     await help_menu(client, message)
 
-@app.on_message(filters.command(["stats", "addbal", "broadcast", "addadmin", "rmadmin", "setfsub", "setupi", "addacc"]) & filters.private)
+@app.on_message(filters.command(["stats", "addbal", "broadcast", "addadmin", "rmadmin", "setfsub", "setupi", "addacc", "recovery", "fa2", "sold", "login"]) & filters.private)
 async def admin_cmds(client, message: Message):
     if not is_admin(message.from_user.id):
         return
@@ -42,15 +42,25 @@ async def admin_cmds(client, message: Message):
         await broadcast(client, message)
     elif cmd in ["addadmin", "rmadmin"]:
         await manage_admins(client, message)
-    elif cmd in ["setfsub", "setupi"]:
+    elif cmd in ["setfsub", "setupi", "recovery", "fa2"]:
         await set_config_cmd(client, message)
     elif cmd == "addacc":
         await add_acc_start(client, message)
+    elif cmd == "sold":
+        from handlers.admin import sold_accounts
+        await sold_accounts(client, message)
+    elif cmd == "login":
+        from handlers.session import login_command
+        await login_command(client, message)
 
 # ── Message Handler ─────────────────────────
-@app.on_message(filters.private & ~filters.command(["start", "help", "stats", "addbal", "broadcast", "addadmin", "rmadmin", "setfsub", "setupi", "addacc"]))
+@app.on_message(filters.private & ~filters.command(["start", "help", "stats", "addbal", "broadcast", "addadmin", "rmadmin", "setfsub", "setupi", "addacc", "recovery", "fa2", "sold", "login"]))
 async def msg_h(client, message):
-    await handle_message(client, message)
+    from handlers.session import session_states, handle_session_message
+    if message.from_user.id in session_states:
+        await handle_session_message(client, message)
+    else:
+        await handle_message(client, message)
 
 # ── Callbacks ───────────────────────────────
 @app.on_callback_query()
