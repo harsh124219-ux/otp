@@ -19,10 +19,13 @@ async def shop_menu(client: Client, message: Message):
     countries = accounts_col.distinct("country", {"status": "available"})
 
     if not countries:
-        await message.edit_text(
-            "🛒 **SHOP**\n\n❌ No accounts available at the moment.",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="back_to_main")]])
-        )
+        # Match identical UI formatting for both Callback & direct Commands
+        text = "🛒 **SHOP**\n\n❌ No accounts available at the moment."
+        markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="back_to_main")]])
+        if hasattr(message, "edit_text") and message.from_user.id == client.me.id:
+            await message.edit_text(text, reply_markup=markup)
+        else:
+            await message.reply_text(text, reply_markup=markup)
         return
 
     buttons = []
@@ -33,7 +36,15 @@ async def shop_menu(client: Client, message: Message):
         ])
 
     buttons.append([InlineKeyboardButton("🔙 Back", callback_data="back_to_main")])
-    await message.edit_text("🛒 **SHOP**\n\nSelect a country to view stock:", reply_markup=InlineKeyboardMarkup(buttons))
+    
+    text = "🛒 **SHOP**\n\nSelect a country to view stock:"
+    markup = InlineKeyboardMarkup(buttons)
+    
+    # Check if we can edit or must reply (for text commands like /shop)
+    if hasattr(message, "edit_text") and message.from_user.id == client.me.id:
+        await message.edit_text(text, reply_markup=markup)
+    else:
+        await message.reply_text(text, reply_markup=markup)
 
 async def sort_options_menu(client: Client, callback: CallbackQuery):
     country = callback.data.replace("sort_opts_", "")
@@ -114,7 +125,6 @@ async def get_otp_logic(client: Client, callback: CallbackQuery):
         fifteen_minutes_ago = datetime.utcnow() - timedelta(minutes=15)
 
         async for m in user_client.get_chat_history(777000, limit=5):
-            # Verify message time is within the last 15 minutes
             if m.date and m.date >= fifteen_minutes_ago:
                 if m.text:
                     otp_msg = m.text
@@ -131,3 +141,34 @@ async def get_otp_logic(client: Client, callback: CallbackQuery):
         )
     except Exception as e:
         await callback.message.reply_text(f"❌ Error communicating with Telegram session: `{e}`")
+
+async def logout_acc_logic(client: Client, callback: CallbackQuery):
+    order_id = callback.data.replace("logout_acc_", "")
+    order = get_order(order_id)
+
+    if not order:
+        await callback.answer("Active session record missing.", show_alert=True)
+        return
+
+    try:
+        user_client = Client(f"s_{order['phone']}", API_ID, API_HASH, session_string=order["session_string"], in_memory=True)
+        await user_client.connect()
+        await user_client.log_out()
+        close_order(order_id)
+
+        log_text = (
+            f"🛒 🛍️ **NEW COMPLETED SALE DONE**\n\n"
+            f"👤 **Buyer ID:** `{order['user_id']}`\n"
+            f"📱 **Phone Number:** `{order['phone']}`\n"
+            f"🌍 **Country Pool:** {order['country']}\n"
+            f"💰 **Final Price Paid:** ₹{order['price']}\n"
+            f"📅 **Date:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        )
+        await client.send_message(chat_id=LOG_GROUP, text=log_text)
+
+        await callback.message.edit_text(
+            f"✅ Successfully logged out from account `{order['phone']}`. Session is now finalized.",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back_to_main")]])
+        )
+    except Exception as e:
+        await callback.message.reply_text(f"❌ Session closure issue: `{e}`")
