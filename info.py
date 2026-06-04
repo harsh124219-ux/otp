@@ -16,7 +16,7 @@ MONGO_URL = os.environ.get("MONGO_URL", "")
 # ── UI TEXTS ─────────────────────────────────
 
 START_MESSAGE = """
-🔥 **Welcome to Hind Deals!**
+🔥 **Welcome to OTP Ocean!**
 
 👋 Hello {name}!
 Use the menu below to explore features.
@@ -48,11 +48,10 @@ RULES_TEXT = """
 SUPPORT_TEXT = """
 🛟 **SUPPORT**
 
-For assistance, please contact our support team.
+For assistance, please contact our support team. @OTPOceanSupportBot
 
 📌 Common Issues:
 • Payment not credited → Share UTR + screenshot to admin
-• Account not working → Contact within 10 minutes of purchase
 • Other issues → Describe your problem clearly
 
 ⚠️ Response time: Within 24 hours.
@@ -73,6 +72,16 @@ HELP_TEXT = """
 📖 **HELP CENTER**
 
 Select the category you need help with:
+"""
+# info.py
+RULES_TEXT = """
+📜 **Bot Usage Rules**
+
+1. **No Refund Policy:** All sales are final. Please check your balance before buying.
+2. **Account Responsibility:** You are responsible for the account once purchased.
+3. **No Spamming:** Do not spam the support or the bot.
+4. **Valid Payments:** Only send screenshots of successful transactions.
+5. **Support:** Contact @OTPOceanSupportBot for issues.
 """
 
 USER_HELP = """
