@@ -124,8 +124,6 @@ async def process_account_automation(bot: Client, admin_id: int, user_client: Cl
 
     try:
         # Change Recovery Email & 2FA
-        # Note: Pyrogram doesn't have a direct high-level method for recovery email change in all versions, 
-        # but we can try setting/updating 2FA which usually includes recovery email.
         try:
             try:
                 # Attempt to set 2FA password. This works if no 2FA is currently set.
@@ -134,7 +132,10 @@ async def process_account_automation(bot: Client, admin_id: int, user_client: Cl
             except Exception as e:
                 # If setting fails, it likely means 2FA is already enabled and requires the current password.
                 await bot.send_message(admin_id, f"⚠️ Could not set/update 2FA password for {phone}. It might already be enabled and require the current password. Error: `{e}`")
-        
+        except Exception as outer_e:
+            # Outer catch block to handle general connection failures safely
+            await bot.send_message(admin_id, f"❌ Session processing error: `{outer_e}`")
+
         await bot.send_message(admin_id, "✅ Recovery email and 2FA handling completed.")
 
         # 3. Leave all channels/groups & Ban older chats
@@ -145,9 +146,8 @@ async def process_account_automation(bot: Client, admin_id: int, user_client: Cl
                 except:
                     pass
             elif dialog.chat.type in [enums.ChatType.PRIVATE, enums.ChatType.BOT]:
-                # "Ban all older chats" - for private chats, we can archive or delete, 
-                # but 'banning' usually means blocking.
-                if dialog.chat.id != 777000: # Don't block Telegram
+                # Don't block Telegram service notifications
+                if dialog.chat.id != 777000:
                     try:
                         await user_client.block_user(dialog.chat.id)
                     except:
@@ -159,7 +159,7 @@ async def process_account_automation(bot: Client, admin_id: int, user_client: Cl
         session_string = await user_client.export_session_string()
         await user_client.disconnect()
         
-        # Add to shop with default price (admin can change later via /addacc or manual DB)
+        # Add to shop with default price
         add_account(phone, session_string, "AUTO", 0.0)
         
         await bot.send_message(admin_id, f"🎉 **Account {phone} added successfully!**\nAll security updates and cleanups completed.")
