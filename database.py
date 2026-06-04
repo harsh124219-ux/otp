@@ -17,13 +17,13 @@ config_col = db["config"]
 def get_config():
     config = config_col.find_one({"type": "settings"})
     if not config:
-        # Initialize default settings
         default_config = {
             "type": "settings",
             "admins": [ADMIN_ID],
             "fsub_channel": None,
             "upi_id": "yourname@upi",
             "upi_name": "Your Name",
+            "upi_image_file_id": None,   # Telegram file_id for UPI QR/image
             "otp_price": 10.0,
             "updated_at": datetime.now()
         }
@@ -48,7 +48,8 @@ def add_admin(user_id: int):
     )
 
 def remove_admin(user_id: int):
-    if user_id == ADMIN_ID: return False # Cannot remove primary admin
+    if user_id == ADMIN_ID:
+        return False
     config_col.update_one(
         {"type": "settings"},
         {"$pull": {"admins": user_id}}
@@ -124,7 +125,7 @@ def add_account(phone: str, session_string: str, country: str, price: float):
         {"phone": phone},
         {"$set": {
             "session_string": session_string,
-            "country": country.upper(), # Store as uppercase for consistency
+            "country": country.upper(),
             "price": price,
             "status": "available",
             "added_at": datetime.now()
@@ -136,7 +137,6 @@ def get_available_accounts(country: str = None):
     query = {"status": "available"}
     if country:
         query["country"] = country.upper()
-    # Sort by price: Expensive first (descending)
     return list(accounts_col.find(query).sort("price", -1))
 
 def update_account_status(phone: str, status: str):
