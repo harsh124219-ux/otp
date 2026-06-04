@@ -1,37 +1,75 @@
-"""
-main.py — OTP Ocean Bot
-────────────────────────
-Entry point. Registers all handlers and starts the bot.
-"""
-
 import asyncio
+import sys
 from pyrogram import Client, filters
 from pyrogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from info import BOT_TOKEN, API_ID, API_HASH
 from database import is_admin
 
-from handlers.user import (
-    start, profile_menu, orders_menu,
-    deposit_menu, help_menu, help_detail,
-    handle_message, user_states
-)
-from handlers.shop import (
-    shop_menu, sort_options_menu, view_country_accounts,
-    buy_account, get_otp_logic, logout_acc_logic
-)
-from handlers.admin import (
-    stats, add_bal, broadcast, manage_admins,
-    set_config_cmd, add_acc_start, sold_accounts,
-    set_upi_image_start
-)
-from handlers.payment import payment_callback
-from handlers.fsub import recheck_fsub_callback
+# ── Import all handler modules with explicit error reporting ──
+# If ANY import fails, print exactly which one and exit so Heroku
+# shows the real error instead of silently running with no handlers.
+try:
+    from handlers.user import (
+        start, profile_menu, orders_menu,
+        deposit_menu, help_menu, help_detail,
+        handle_message, user_states
+    )
+    print("✅ handlers.user loaded")
+except Exception as _e:
+    print(f"❌ FATAL: handlers.user failed to load: {_e}", file=sys.stderr)
+    sys.exit(1)
+
+try:
+    from handlers.shop import (
+        shop_menu, sort_options_menu, view_country_accounts,
+        buy_account, get_otp_logic, logout_acc_logic
+    )
+    print("✅ handlers.shop loaded")
+except Exception as _e:
+    print(f"❌ FATAL: handlers.shop failed to load: {_e}", file=sys.stderr)
+    sys.exit(1)
+
+try:
+    from handlers.admin import (
+        stats, add_bal, broadcast, manage_admins,
+        set_config_cmd, add_acc_start, sold_accounts,
+        set_upi_image_start
+    )
+    print("✅ handlers.admin loaded")
+except Exception as _e:
+    print(f"❌ FATAL: handlers.admin failed to load: {_e}", file=sys.stderr)
+    sys.exit(1)
+
+try:
+    from handlers.payment import payment_callback
+    print("✅ handlers.payment loaded")
+except Exception as _e:
+    print(f"❌ FATAL: handlers.payment failed to load: {_e}", file=sys.stderr)
+    sys.exit(1)
+
+try:
+    from handlers.fsub import recheck_fsub_callback
+    print("✅ handlers.fsub loaded")
+except Exception as _e:
+    print(f"❌ FATAL: handlers.fsub failed to load: {_e}", file=sys.stderr)
+    sys.exit(1)
+
+try:
+    # Pre-check session.py so a bad import surfaces immediately at startup.
+    import handlers.session as _session_check  # noqa: F401
+    print("✅ handlers.session loaded")
+except Exception as _e:
+    print(f"❌ FATAL: handlers.session failed to load: {_e}", file=sys.stderr)
+    sys.exit(1)
+
+# Strip any accidental whitespace/newline from env-var token
+_clean_token = BOT_TOKEN.strip()
 
 app = Client(
     "otpbot",
     api_id=API_ID,
     api_hash=API_HASH,
-    bot_token=BOT_TOKEN
+    bot_token=_clean_token
 )
 
 
@@ -45,13 +83,13 @@ app = Client(
 )
 async def commands_h(client: Client, message: Message):
     cmd = message.command[0]
-    if   cmd == "start":       await start(client, message)
-    elif cmd == "help":        await help_menu(client, message)
-    elif cmd == "shop":        await shop_menu(client, message)
-    elif cmd == "orders":      await orders_menu(client, message)
+    if   cmd == "start":      await start(client, message)
+    elif cmd == "help":       await help_menu(client, message)
+    elif cmd == "shop":       await shop_menu(client, message)
+    elif cmd == "orders":     await orders_menu(client, message)
     elif cmd in ("balance", "profile"):
         await profile_menu(client, message)
-    elif cmd == "addbalance":  await deposit_menu(client, message)
+    elif cmd == "addbalance": await deposit_menu(client, message)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -70,14 +108,14 @@ async def admin_cmds(client: Client, message: Message):
     if not is_admin(message.from_user.id):
         return
     cmd = message.command[0]
-    if   cmd == "stats":                await stats(client, message)
-    elif cmd == "addbal":               await add_bal(client, message)
-    elif cmd == "broadcast":            await broadcast(client, message)
-    elif cmd in ("addadmin", "rmadmin"):await manage_admins(client, message)
+    if   cmd == "stats":                     await stats(client, message)
+    elif cmd == "addbal":                    await add_bal(client, message)
+    elif cmd == "broadcast":                 await broadcast(client, message)
+    elif cmd in ("addadmin", "rmadmin"):     await manage_admins(client, message)
     elif cmd in ("setfsub", "setupi", "recovery", "fa2"):
         await set_config_cmd(client, message)
-    elif cmd == "addacc":               await add_acc_start(client, message)
-    elif cmd == "sold":                 await sold_accounts(client, message)
+    elif cmd == "addacc":                    await add_acc_start(client, message)
+    elif cmd == "sold":                      await sold_accounts(client, message)
     elif cmd == "login":
         from handlers.session import login_command
         await login_command(client, message)
@@ -102,7 +140,6 @@ async def msg_h(client: Client, message: Message):
 
     user_id = message.from_user.id
 
-    # Priority order: payment rejection → session login → admin interactive → user deposit
     if user_id in payment_admin_states:
         await handle_admin_rejection_reason(client, message)
     elif user_id in session_states:
@@ -117,15 +154,10 @@ async def msg_h(client: Client, message: Message):
 #  Callback Query Handler
 # ─────────────────────────────────────────────────────────────
 
-# Callbacks that require fsub check before proceeding
 _FSUB_GUARDED = {"open_shop", "open_deposit", "open_orders", "open_profile"}
 
 
 async def _run_fsub_check(client: Client, callback: CallbackQuery) -> bool:
-    """
-    Returns True if the user passed fsub or is admin.
-    Handles the reply/edit internally on failure.
-    """
     from handlers.fsub import check_fsub
     return await check_fsub(client, callback.message)
 
@@ -133,15 +165,13 @@ async def _run_fsub_check(client: Client, callback: CallbackQuery) -> bool:
 @app.on_callback_query()
 async def cb_h(client: Client, callback: CallbackQuery):
     data = callback.data
-    await callback.answer()   # acknowledge immediately to stop the spinner
+    await callback.answer()
 
     try:
-        # ── FSub re-check callback ─────────────────────────────
         if data == "check_fsub_again":
             await recheck_fsub_callback(client, callback)
             return
 
-        # ── Cancel deposit ─────────────────────────────────────
         if data == "cancel_deposit":
             user_states.pop(callback.from_user.id, None)
             try:
@@ -151,12 +181,10 @@ async def cb_h(client: Client, callback: CallbackQuery):
             await start(client, callback)
             return
 
-        # ── FSub guard for key menus ───────────────────────────
         if data in _FSUB_GUARDED:
             if not await _run_fsub_check(client, callback):
-                return  # check_fsub already replied with the join prompt
+                return
 
-        # ── Main navigation ────────────────────────────────────
         if data == "back_to_main":
             await start(client, callback)
 
@@ -194,7 +222,6 @@ async def cb_h(client: Client, callback: CallbackQuery):
                 InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="back_to_main")]])
             )
 
-        # ── Shop flow ──────────────────────────────────────────
         elif data.startswith("sort_opts_"):
             await sort_options_menu(client, callback)
 
@@ -210,22 +237,18 @@ async def cb_h(client: Client, callback: CallbackQuery):
         elif data.startswith("logout_acc_"):
             await logout_acc_logic(client, callback)
 
-        # ── Payment approval ───────────────────────────────────
         elif data.startswith("approve_") or data.startswith("reject_"):
             await payment_callback(client, callback)
 
-        # ── Session automation ─────────────────────────────────
         elif data.startswith("setup_"):
             from handlers.session import handle_automation_callback
             await handle_automation_callback(client, callback)
 
-        # ── Admin: UPI image update ────────────────────────────
         elif data == "set_upi_image":
             await set_upi_image_start(client, callback)
 
     except Exception as e:
         print(f"[CB ERROR] data={data!r}  error={e}")
-        # Soft fallback — go back to main menu without crashing
         try:
             await start(client, callback)
         except Exception:
