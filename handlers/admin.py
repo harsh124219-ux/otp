@@ -108,20 +108,20 @@ async def set_config_cmd(client: Client, message: Message):
             else:
                 text += "\n🖼️ QR Image: Not set yet"
             await message.reply_text(text, reply_markup=markup)
-    elif cmd == "recovery":
-        if len(message.command) < 2:
-            await message.reply_text("Usage: /recovery <email>")
-            return
-        val = message.command[1]
-        update_config("recovery_email", val)
-        await message.reply_text(f"✅ Recovery email set to: `{val}`")
-    elif cmd == "fa2":
-        if len(message.command) < 2:
-            await message.reply_text("Usage: /fa2 <password>")
-            return
-        val = message.command[1]
-        update_config("admin_2fa", val)
-        await message.reply_text(f"✅ Admin 2FA password set to: `{val}`")
+        elif cmd == "recovery":
+            if len(message.command) < 2:
+                await message.reply_text("Usage: /recovery <email>")
+                return
+            val = message.command[1]
+            update_config("recovery_email", val)
+            await message.reply_text(f"✅ Recovery email set to: `{val}`")
+        elif cmd == "fa2":
+            if len(message.command) < 2:
+                await message.reply_text("Usage: /fa2 <password>")
+                return
+            val = message.command[1]
+            update_config("admin_2fa", val)
+            await message.reply_text(f"✅ Admin 2FA password set to: `{val}`")
     except Exception:
         await message.reply_text("Usage:\n/setfsub <id/link>\n/setupi <upi_id> <name>\n/recovery <email>\n/fa2 <password>")
 
