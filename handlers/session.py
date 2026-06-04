@@ -5,7 +5,9 @@ from info import ADMIN_ID, API_ID, API_HASH
 from database import get_config, add_account
 import asyncio
 
+# States: {admin_id: {"step": "...", ...}}
 session_states = {}
+
 
 async def login_command(client: Client, message: Message):
     if message.from_user.id != ADMIN_ID:
@@ -15,9 +17,11 @@ async def login_command(client: Client, message: Message):
     )
     session_states[message.from_user.id] = {"step": "waiting_phone"}
 
+
 async def handle_session_message(client: Client, message: Message):
     admin_id = message.from_user.id
     state = session_states.get(admin_id)
+
     if not state:
         return
 
@@ -25,7 +29,12 @@ async def handle_session_message(client: Client, message: Message):
 
     if step == "waiting_phone":
         phone = message.text.strip()
-        temp_client = Client("temp_session", api_id=API_ID, api_hash=API_HASH, in_memory=True)
+        temp_client = Client(
+            "temp_session",
+            api_id=API_ID,
+            api_hash=API_HASH,
+            in_memory=True
+        )
         try:
             await temp_client.connect()
             code_info = await temp_client.send_code(phone)
@@ -50,9 +59,9 @@ async def handle_session_message(client: Client, message: Message):
         phone_code_hash = state["phone_code_hash"]
         try:
             await temp_client.sign_in(phone, phone_code_hash, code)
-            # Ask for the Country next
+            # Code verified, transition to asking for country name next
             session_states[admin_id]["step"] = "waiting_country"
-            await message.reply_text("🌍 Enter the **country name** for this account pool (e.g., India):")
+            await message.reply_text("🌍 Now enter the **Country Name** for this account (e.g., India):")
         except SessionPasswordNeeded:
             session_states[admin_id]["step"] = "waiting_password"
             await message.reply_text("🔐 Two-step verification enabled. Enter your password:")
@@ -68,8 +77,9 @@ async def handle_session_message(client: Client, message: Message):
         phone = state["phone"]
         try:
             await temp_client.check_password(password)
+            # Password verified, transition to asking for country name next
             session_states[admin_id]["step"] = "waiting_country"
-            await message.reply_text("🌍 Enter the **country name** for this account pool (e.g., India):")
+            await message.reply_text("🌍 Now enter the **Country Name** for this account (e.g., India):")
         except PasswordHashInvalid:
             await message.reply_text("❌ Incorrect password. Please try again:")
         except Exception as e:
@@ -77,121 +87,106 @@ async def handle_session_message(client: Client, message: Message):
             session_states.pop(admin_id, None)
 
     elif step == "waiting_country":
-        country = message.text.strip().upper()
-        session_states[admin_id].update({"step": "waiting_price", "country": country})
-        await message.reply_text(f"🌍 Country set to `{country}`.\n\n💰 Now enter the **Price** for this account (e.g., 150):")
+        country_name = message.text.strip().upper()
+        session_states[admin_id]["country"] = country_name
+        session_states[admin_id]["step"] = "waiting_price"
+        await message.reply_text(f"🌍 Country set to `{country_name}`.\n\n💰 Now enter the **Price** of the account in ₹ (e.g., 150):")
 
     elif step == "waiting_price":
         try:
-            price = float(message.text.strip())
-            session_states[admin_id].update({"price": price})
-            # Configuration checks are complete, prompt the automation options
-            await ask_automation_choices(client, admin_id, state["temp_client"], state["phone"])
+            price_val = float(message.text.strip())
+            session_states[admin_id]["price"] = price_val
+            
+            temp_client = state["temp_client"]
+            phone = state["phone"]
+            # Proceed to automation setup with our provided data parameters
+            await process_account_automation(client, admin_id, temp_client, phone)
         except ValueError:
-            await message.reply_text("❌ Invalid price format. Please enter a valid number:")
+            await message.reply_text("❌ Invalid entry. Please enter a numerical value for price:")
 
     elif step == "waiting_recovery_email":
         email = message.text.strip()
+        temp_client = state["temp_client"]
+        phone = state["phone"]
         from database import update_config
         update_config("recovery_email", email)
         await message.reply_text(f"✅ Recovery email set to `{email}`. Proceeding...")
-        await process_account_automation(client, admin_id, state["temp_client"], state["phone"], state["choices"])
+        await process_account_automation(client, admin_id, temp_client, phone)
 
     elif step == "waiting_admin_2fa":
         password = message.text.strip()
+        temp_client = state["temp_client"]
+        phone = state["phone"]
         from database import update_config
         update_config("admin_2fa", password)
         await message.reply_text(f"✅ Admin 2FA set to `{password}`. Proceeding...")
-        await process_account_automation(client, admin_id, state["temp_client"], state["phone"], state["choices"])
+        await process_account_automation(client, admin_id, temp_client, phone)
 
-async def ask_automation_choices(bot: Client, admin_id: int, user_client: Client, phone: str):
-    session_states[admin_id].update({"step": "waiting_menu_choice"})
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("⚙️ Full Setup (Chat Del, Ban, 2FA, Email)", callback_data="setup_all")],
-        [InlineKeyboardButton("🧹 Clean Setup (Chat Del + Ban Only)", callback_data="setup_clean")],
-        [InlineKeyboardButton("🛡️ Security Setup (2FA + Email Only)", callback_data="setup_sec")],
-        [InlineKeyboardButton("⏩ Skip All (Directly Add to Shop)", callback_data="setup_skip")]
-    ])
-    await bot.send_message(
-        chat_id=admin_id,
-        text=f"✅ **Account data compiled for {phone}!**\n\nPlease select what automated setup actions to execute:",
-        reply_markup=keyboard
-    )
 
-async def handle_automation_callback(bot: Client, callback: CallbackQuery):
-    admin_id = callback.from_user.id
+async def process_account_automation(bot: Client, admin_id: int, user_client: Client, phone: str):
     state = session_states.get(admin_id)
-    if not state or state.get("step") != "waiting_menu_choice":
-        await callback.answer("❌ Interactive configuration session expired.", show_alert=True)
-        return
-
-    await callback.answer("Processing options...")
-    data = callback.data
-    temp_client = state["temp_client"]
-    phone = state["phone"]
-
-    choices = {
-        "chat_delete": data in ["setup_all", "setup_clean"],
-        "ban_users": data in ["setup_all", "setup_clean"],
-        "change_2fa": data in ["setup_all", "setup_sec"],
-        "change_email": data in ["setup_all", "setup_sec"]
-    }
-
-    await callback.message.delete()
-    await process_account_automation(bot, admin_id, temp_client, phone, choices)
-
-async def process_account_automation(bot: Client, admin_id: int, user_client: Client, phone: str, choices: dict):
-    state = session_states.get(admin_id)
-    country = state.get("country", "GLOBAL")
+    country = state.get("country", "AUTO")
     price = state.get("price", 0.0)
 
     config = get_config()
     recovery_email = config.get("recovery_email")
     admin_2fa = config.get("admin_2fa")
 
-    if choices["change_email"] and not recovery_email:
-        session_states[admin_id].update({"step": "waiting_recovery_email", "choices": choices})
+    if not recovery_email:
+        session_states[admin_id]["step"] = "waiting_recovery_email"
         await bot.send_message(admin_id, "📧 Recovery mail is not set. Please send the recovery email to use:")
         return
 
-    if choices["change_2fa"] and not admin_2fa:
-        session_states[admin_id].update({"step": "waiting_admin_2fa", "choices": choices})
+    if not admin_2fa:
+        session_states[admin_id]["step"] = "waiting_admin_2fa"
         await bot.send_message(admin_id, "🔐 Admin 2FA password is not set. Please send the password to set:")
         return
 
-    status_text = "⚙️ **Starting account provisioning automation...**"
-    await bot.send_message(admin_id, status_text)
+    await bot.send_message(admin_id, "⚙️ **Starting automation...**\n- Changing recovery email\n- Changing 2FA password\n- Cleaning up chats/channels")
 
     try:
-        if choices["change_2fa"] or choices["change_email"]:
+        try:
             try:
-                p_2fa = admin_2fa if choices["change_2fa"] else None
-                p_email = recovery_email if choices["change_email"] else None
-                await user_client.set_password(new_password=p_2fa, email=p_email)
+                await user_client.set_password(new_password=admin_2fa, email=recovery_email)
+                await bot.send_message(admin_id, "✅ 2FA password set successfully.")
             except Exception as e:
-                await bot.send_message(admin_id, f"⚠️ Secure configurations could not complete: `{e}`")
+                await bot.send_message(admin_id, f"⚠️ Could not set/update 2FA password for {phone}: `{e}`")
+        except Exception as outer_e:
+            await bot.send_message(admin_id, f"❌ Session processing error: `{outer_e}`")
 
-        if choices["chat_delete"] or choices["ban_users"]:
-            async for dialog in user_client.get_dialogs():
-                if choices["chat_delete"] and dialog.chat.type in [enums.ChatType.GROUP, enums.ChatType.SUPERGROUP, enums.ChatType.CHANNEL]:
-                    try: await user_client.leave_chat(dialog.chat.id)
-                    except: pass
-                elif choices["ban_users"] and dialog.chat.type in [enums.ChatType.PRIVATE, enums.ChatType.BOT]:
-                    if dialog.chat.id != 777000:
-                        try: await user_client.block_user(dialog.chat.id)
-                        except: pass
+        await bot.send_message(admin_id, "✅ Recovery email and 2FA handling completed.")
+
+        async for dialog in user_client.get_dialogs():
+            if dialog.chat.type in [enums.ChatType.GROUP, enums.ChatType.SUPERGROUP, enums.ChatType.CHANNEL]:
+                try:
+                    await user_client.leave_chat(dialog.chat.id)
+                except:
+                    pass
+            elif dialog.chat.type in [enums.ChatType.PRIVATE, enums.ChatType.BOT]:
+                if dialog.chat.id != 777000:
+                    try:
+                        await user_client.block_user(dialog.chat.id)
+                    except:
+                        pass
+        
+        await bot.send_message(admin_id, "✅ Chats cleaned and older contacts blocked.")
 
         session_string = await user_client.export_session_string()
         await user_client.disconnect()
         
-        # Save to database with requested custom fields
+        # Save to database using custom pricing and country values
         add_account(phone, session_string, country, price)
         
-        await bot.send_message(admin_id, f"🎉 **Account {phone} added successfully!**\n🌍 Pool: {country}\n💰 Price: ₹{price}")
+        await bot.send_message(admin_id, f"🎉 **Account {phone} added successfully!**\n🌍 Country Pool: {country}\n💰 Cost: ₹{price}")
         session_states.pop(admin_id, None)
+
     except Exception as e:
         await notify_admin_failure(bot, admin_id, phone, str(e))
         session_states.pop(admin_id, None)
 
+
 async def notify_admin_failure(bot: Client, admin_id: int, phone: str, error: str):
-    await bot.send_message(admin_id, f"❌ **Automation Failed for {phone}**\n\nError: `{error}`")
+    await bot.send_message(
+        admin_id, 
+        f"❌ **Automation Failed for {phone}**\n\nError: `{error}`\n\nPlease check the account manually."
+    )
