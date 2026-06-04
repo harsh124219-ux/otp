@@ -33,7 +33,8 @@ async def handle_session_message(client: Client, message: Message):
                 "step": "waiting_code",
                 "phone": phone,
                 "phone_code_hash": code_info.phone_code_hash,
-                "temp_client": temp_client
+                "temp_client": temp_client,
+                "account_password": ""  # Track the 2FA password used for this specific account
             }
             await message.reply_text(f"✅ Code sent to `{phone}`. Please enter the OTP:")
         except FloodWait as e:
@@ -67,6 +68,7 @@ async def handle_session_message(client: Client, message: Message):
         phone = state["phone"]
         try:
             await temp_client.check_password(password)
+            session_states[admin_id]["account_password"] = password  # Store the current password explicitly
             session_states[admin_id]["step"] = "waiting_country"
             await message.reply_text("🌍 Enter the **country name** for this account pool (e.g., India):")
         except PasswordHashInvalid:
@@ -99,6 +101,8 @@ async def handle_session_message(client: Client, message: Message):
         password = message.text.strip()
         from database import update_config
         update_config("admin_2fa", password)
+        # Update the target tracking variable to reflect this newly generated password
+        session_states[admin_id]["account_password"] = password
         await message.reply_text(f"✅ Admin 2FA set to `{password}`. Proceeding...")
         await process_account_automation(client, admin_id, state["temp_client"], state["phone"], state["choices"])
 
@@ -142,6 +146,7 @@ async def process_account_automation(bot: Client, admin_id: int, user_client: Cl
     state = session_states.get(admin_id)
     country = state.get("country", "GLOBAL")
     price = state.get("price", 0.0)
+    account_password = state.get("account_password", "")
 
     config = get_config()
     recovery_email = config.get("recovery_email")
@@ -166,6 +171,8 @@ async def process_account_automation(bot: Client, admin_id: int, user_client: Cl
                 p_2fa = admin_2fa if choices["change_2fa"] else None
                 p_email = recovery_email if choices["change_email"] else None
                 await user_client.set_password(new_password=p_2fa, email=p_email)
+                if p_2fa:
+                    account_password = p_2fa
             except Exception as e:
                 await bot.send_message(admin_id, f"⚠️ Secure configurations could not complete: `{e}`")
 
@@ -182,10 +189,19 @@ async def process_account_automation(bot: Client, admin_id: int, user_client: Cl
         session_string = await user_client.export_session_string()
         await user_client.disconnect()
         
-        # Save to database with requested custom fields
-        add_account(phone, session_string, country, price)
+        # Save account data, appending password metadata to safely store 2FA access rules
+        from database import accounts_col
+        accounts_col.insert_one({
+            "phone": phone,
+            "session_string": session_string,
+            "country": country,
+            "price": price,
+            "status": "available",
+            "password": account_password,
+            "timestamp": datetime.utcnow() if "datetime" in globals() else None
+        })
         
-        await bot.send_message(admin_id, f"🎉 **Account {phone} added successfully!**\n🌍 Pool: {country}\n💰 Price: ₹{price}")
+        await bot.send_message(admin_id, f"🎉 **Account {phone} added successfully!**\\n🌍 Pool: {country}\\n💰 Price: ₹{price}")
         session_states.pop(admin_id, None)
     except Exception as e:
         await notify_admin_failure(bot, admin_id, phone, str(e))
