@@ -7,8 +7,8 @@ db = client["otpbot"]
 
 users_col = db["users"]
 transactions_col = db["transactions"]
-sessions_col = db["sessions"]
-sales_col = db["sales"]
+accounts_col = db["accounts"] # Pool of available Telegram accounts
+orders_col = db["orders"]     # Assigned accounts to users
 
 
 # ── User functions ──────────────────────────
@@ -19,6 +19,7 @@ def get_user(user_id: int):
         users_col.insert_one({
             "user_id": user_id,
             "balance": 0,
+            "total_spent": 0,
             "joined": datetime.now()
         })
         return users_col.find_one({"user_id": user_id})
@@ -43,7 +44,7 @@ def deduct_balance(user_id: int, amount: float) -> bool:
     if user["balance"] >= amount:
         users_col.update_one(
             {"user_id": user_id},
-            {"$inc": {"balance": -amount}}
+            {"$inc": {"balance": -amount, "total_spent": amount}}
         )
         return True
     return False
@@ -77,36 +78,48 @@ def utr_exists(utr: str) -> bool:
     return transactions_col.find_one({"utr": utr}) is not None
 
 
-# ── Session functions ───────────────────────
+# ── Account Management (Pool) ────────────────
 
-def save_session(session_string: str):
-    # Store only one session for now, or you can expand this to multiple
-    sessions_col.update_one(
-        {"type": "admin_session"},
-        {"$set": {"session_string": session_string, "updated_at": datetime.now()}},
+def add_account(phone: str, session_string: str, country: str):
+    accounts_col.update_one(
+        {"phone": phone},
+        {"$set": {
+            "session_string": session_string,
+            "country": country,
+            "status": "available",
+            "added_at": datetime.now()
+        }},
         upsert=True
     )
 
+def get_available_account(country: str):
+    return accounts_col.find_one({"country": country, "status": "available"})
 
-def get_session():
-    doc = sessions_col.find_one({"type": "admin_session"})
-    return doc["session_string"] if doc else None
-
-
-def delete_session():
-    sessions_col.delete_one({"type": "admin_session"})
+def update_account_status(phone: str, status: str):
+    accounts_col.update_one({"phone": phone}, {"$set": {"status": status}})
 
 
-# ── Sales functions ─────────────────────────
+# ── Order Management (Assigned) ──────────────
 
-def log_otp_sale(user_id: int, content: str, price: float):
-    sales_col.insert_one({
+def create_order(user_id: int, phone: str, session_string: str, country: str, price: float):
+    order_id = f"ORD{int(datetime.now().timestamp())}"
+    orders_col.insert_one({
+        "order_id": order_id,
         "user_id": user_id,
-        "content": content,
+        "phone": phone,
+        "session_string": session_string,
+        "country": country,
         "price": price,
+        "status": "active",
         "timestamp": datetime.now()
     })
+    return order_id
 
+def get_user_orders(user_id: int):
+    return list(orders_col.find({"user_id": user_id}).sort("timestamp", -1))
 
-def get_sales_history(user_id: int, limit: int = 10):
-    return list(sales_col.find({"user_id": user_id}).sort("timestamp", -1).limit(limit))
+def get_order(order_id: str):
+    return orders_col.find_one({"order_id": order_id})
+
+def close_order(order_id: str):
+    orders_col.update_one({"order_id": order_id}, {"$set": {"status": "closed"}})
