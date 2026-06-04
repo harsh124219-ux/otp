@@ -13,6 +13,7 @@ API_HASH = os.environ.get("API_HASH", "YOUR_API_HASH")
 ADMIN_ID = int(os.environ.get("ADMIN_ID", 123456789))
 LOG_GROUP = int(os.environ.get("LOG_GROUP", -100123456789))
 MONGO_URL = os.environ.get("MONGO_URL", "")
+
 # ── UI TEXTS ─────────────────────────────────
 
 START_MESSAGE = """
@@ -24,13 +25,14 @@ Use the menu below to explore features.
 🛒 Ready-made Telegram accounts available.
 """
 
+# FIX BUG 4: RULES_TEXT was defined TWICE — second one overwrote first.
+# Kept the more complete version here, removed the duplicate.
 RULES_TEXT = """
 📋 **Rules & Guidelines**
 
 **1. Secure your Accounts:**
    • Change 2-step verification immediately
    • Update recovery email address
-   • Change login email (if feature enabled)
    • Terminate other devices after 24 hours
 
 **2. Prohibited Activities:**
@@ -40,15 +42,17 @@ RULES_TEXT = """
    • No harassment or abuse
 
 **3. Refund Policy:**
-   • All deposits are non-refundable.
-   • No refunds after the account is delivered under any circumstances.
-   • All refund decisions are final and at the sole discretion of the Hind Deals Team.
+   • All sales are final. Please check balance before buying.
+   • No refunds after account is delivered under any circumstances.
+   • All decisions are final and at the sole discretion of the team.
+
+**4. Support:** Contact @OTPOceanSupportBot for issues.
 """
 
 SUPPORT_TEXT = """
 🛟 **SUPPORT**
 
-For assistance, please contact our support team. @OTPOceanSupportBot
+For assistance, please contact our support team: @OTPOceanSupportBot
 
 📌 Common Issues:
 • Payment not credited → Share UTR + screenshot to admin
@@ -73,22 +77,14 @@ HELP_TEXT = """
 
 Select the category you need help with:
 """
-# info.py
-RULES_TEXT = """
-📜 **Bot Usage Rules**
-
-1. **No Refund Policy:** All sales are final. Please check your balance before buying.
-2. **Account Responsibility:** You are responsible for the account once purchased.
-3. **No Spamming:** Do not spam the support or the bot.
-4. **Valid Payments:** Only send screenshots of successful transactions.
-5. **Support:** Contact @OTPOceanSupportBot for issues.
-"""
 
 USER_HELP = """
 👤 **USER COMMANDS**
 
 • /start - Start the bot & Main menu
 • /shop - Buy Telegram accounts
+• /orders - View your orders
+• /balance - Check your balance
 • /help - Show this menu
 """
 
@@ -100,11 +96,11 @@ ADMIN_HELP = """
 • /broadcast <msg> - Send to all users
 • /addadmin <id> - Add new admin
 • /rmadmin <id> - Remove an admin
-    • /setfsub <channel_id/link> - Set FSub
-    • /setupi <id> <name> - Set payment UPI
-    • /recovery <email> - Set recovery email
-    • /fa2 <password> - Set admin 2FA password
-    • /sold - View sold accounts panel
-    • /addacc - Add account to shop (interactive)
-    • /login - Link admin session (interactive)
-    """
+• /setfsub <channel_id/link> - Set FSub
+• /setupi <id> <name> - Set payment UPI
+• /recovery <email> - Set recovery email
+• /fa2 <password> - Set admin 2FA password
+• /sold - View sold accounts panel
+• /addacc - Add account to shop (interactive)
+• /login - Link admin session (interactive)
+"""
