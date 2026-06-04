@@ -33,10 +33,11 @@ config_col = db["config"] if db is not None else None
 
 
 
+
 # ── Configuration & Admin Management ─────────
 
 def get_config():
-    if not config_col:
+    if config_col is None:
         print("❌ MongoDB not initialized, cannot get config.")
         return {"admins": [ADMIN_ID]} # Return default admin to prevent bot from crashing
     try:
@@ -63,7 +64,7 @@ def get_config():
 
 
 def update_config(key, value):
-    if not config_col:
+    if config_col is None:
         print("❌ MongoDB not initialized, cannot update config.")
         return
     try:
@@ -81,7 +82,7 @@ def is_admin(user_id: int):
     return user_id in config.get("admins", [ADMIN_ID])
 
 def add_admin(user_id: int):
-    if not config_col:
+    if config_col is None:
         print("❌ MongoDB not initialized, cannot add admin.")
         return
     try:
@@ -94,7 +95,7 @@ def add_admin(user_id: int):
 
 
 def remove_admin(user_id: int):
-    if not config_col:
+    if config_col is None:
         print("❌ MongoDB not initialized, cannot remove admin.")
         return False
     if user_id == ADMIN_ID:
@@ -114,7 +115,7 @@ def remove_admin(user_id: int):
 # ── User functions ──────────────────────────
 
 def get_user(user_id: int):
-    if not users_col:
+    if users_col is None:
         print("❌ MongoDB not initialized, cannot get user.")
         return None
     try:
@@ -135,10 +136,10 @@ def get_user(user_id: int):
 
 def get_balance(user_id: int) -> float:
     user = get_user(user_id)
-    return user.get("balance", 0)
+    return user.get("balance", 0) if user else 0
 
 def add_balance(user_id: int, amount: float):
-    if not users_col:
+    if users_col is None:
         print("❌ MongoDB not initialized, cannot add balance.")
         return
     try:
@@ -152,7 +153,7 @@ def add_balance(user_id: int, amount: float):
 
 
 def deduct_balance(user_id: int, amount: float) -> bool:
-    if not users_col:
+    if users_col is None:
         print("❌ MongoDB not initialized, cannot deduct balance.")
         return False
     try:
@@ -173,7 +174,7 @@ def deduct_balance(user_id: int, amount: float) -> bool:
 # ── Transaction functions ───────────────────
 
 def add_transaction(user_id: int, utr: str, amount: float, ss_file_id: str):
-    if not transactions_col:
+    if transactions_col is None:
         print("❌ MongoDB not initialized, cannot add transaction.")
         return
     try:
@@ -190,7 +191,7 @@ def add_transaction(user_id: int, utr: str, amount: float, ss_file_id: str):
 
 
 def get_transaction(utr: str):
-    if not transactions_col:
+    if transactions_col is None:
         print("❌ MongoDB not initialized, cannot get transaction.")
         return None
     try:
@@ -201,7 +202,7 @@ def get_transaction(utr: str):
 
 
 def update_transaction_status(utr: str, status: str):
-    if not transactions_col:
+    if transactions_col is None:
         print("❌ MongoDB not initialized, cannot update transaction status.")
         return
     try:
@@ -214,7 +215,7 @@ def update_transaction_status(utr: str, status: str):
 
 
 def utr_exists(utr: str) -> bool:
-    if not transactions_col:
+    if transactions_col is None:
         print("❌ MongoDB not initialized, UTR cannot exist.")
         return False
     try:
@@ -228,7 +229,7 @@ def utr_exists(utr: str) -> bool:
 # ── Account Management (Pool) ────────────────
 
 def add_account(phone: str, session_string: str, country: str, price: float):
-    if not accounts_col:
+    if accounts_col is None:
         print("❌ MongoDB not initialized, cannot add account.")
         return
     try:
@@ -248,7 +249,7 @@ def add_account(phone: str, session_string: str, country: str, price: float):
 
 
 def get_available_accounts(country: str = None):
-    if not accounts_col:
+    if accounts_col is None:
         print("❌ MongoDB not initialized, cannot get available accounts.")
         return []
     try:
@@ -262,7 +263,7 @@ def get_available_accounts(country: str = None):
 
 
 def update_account_status(phone: str, status: str):
-    if not accounts_col:
+    if accounts_col is None:
         print("❌ MongoDB not initialized, cannot update account status.")
         return
     try:
@@ -275,7 +276,7 @@ def update_account_status(phone: str, status: str):
 # ── Order Management (Assigned) ──────────────
 
 def create_order(user_id: int, phone: str, session_string: str, country: str, price: float):
-    if not orders_col:
+    if orders_col is None:
         print("❌ MongoDB not initialized, cannot create order.")
         return None
     try:
@@ -297,7 +298,7 @@ def create_order(user_id: int, phone: str, session_string: str, country: str, pr
 
 
 def get_user_orders(user_id: int):
-    if not orders_col:
+    if orders_col is None:
         print("❌ MongoDB not initialized, cannot get user orders.")
         return []
     try:
@@ -308,7 +309,7 @@ def get_user_orders(user_id: int):
 
 
 def get_order(order_id: str):
-    if not orders_col:
+    if orders_col is None:
         print("❌ MongoDB not initialized, cannot get order.")
         return None
     try:
@@ -319,11 +320,10 @@ def get_order(order_id: str):
 
 
 def close_order(order_id: str):
-    if not orders_col:
+    if orders_col is None:
         print("❌ MongoDB not initialized, cannot close order.")
         return
     try:
         orders_col.update_one({"order_id": order_id}, {"$set": {"status": "closed"}})
     except Exception as e:
         print(f"❌ Error closing order: {e}")
-
