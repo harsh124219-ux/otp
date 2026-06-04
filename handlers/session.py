@@ -1,18 +1,3 @@
-"""
-handlers/session.py
-Handles admin /login flow: phone → OTP → (2FA password if needed) → country → price
-→ automation choices → execute automation → save to DB.
-
-BUGS FIXED vs previous version:
-1. set_password() does NOT exist in pyrofork → replaced with enable_cloud_password()
-   and change_cloud_password() with proper current/new password logic.
-2. delete_user_history(chat_id, delete_all=True) was WRONG signature →
-   correct: delete_chat_history(chat_id, revoke=True) for private chats.
-3. setup_skip button had NO handler → added explicit skip branch.
-4. account_password state was cleared between steps → preserved correctly.
-5. get_dialogs(limit=0) now iterates ALL dialogs properly.
-"""
-
 from pyrogram import Client, enums
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from pyrogram.errors import (
