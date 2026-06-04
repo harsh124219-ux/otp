@@ -7,7 +7,7 @@ from database import is_admin
 from handlers.user import (
     start, profile_menu, orders_menu,
     deposit_menu, help_menu, help_detail,
-    handle_message
+    handle_message, user_states
 )
 from handlers.shop import shop_menu, view_country_accounts, buy_account, get_otp_logic, logout_acc_logic
 from handlers.admin import stats, add_bal, broadcast, manage_admins, set_config_cmd, add_acc_start
@@ -33,7 +33,6 @@ async def help_h(client, message):
 async def shop_cmd_h(client, message):
     await shop_menu(client, message)
 
-# Added missing command listeners
 @app.on_message(filters.command("orders") & filters.private)
 async def orders_h(client, message):
     await orders_menu(client, message)
@@ -91,7 +90,14 @@ async def msg_h(client, message):
 @app.on_callback_query()
 async def cb_h(client, callback: CallbackQuery):
     data = callback.data
-    if data == "back_to_main":
+    
+    if data == "cancel_deposit":
+        await callback.message.delete()
+        await start(client, callback)
+        user_states.pop(callback.from_user.id, None)
+        await callback.answer("Deposit cancelled.")
+        
+    elif data == "back_to_main":
         await start(client, callback)
     elif data == "open_shop":
         await shop_menu(client, callback)
