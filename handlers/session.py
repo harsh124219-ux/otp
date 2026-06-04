@@ -21,8 +21,16 @@ from pyrogram.types import (
 from pyrogram.errors import (
     FloodWait, PhoneCodeInvalid, PhoneCodeExpired,
     SessionPasswordNeeded, PasswordHashInvalid,
-    EmailUnverified, NewPasswordRequired,
 )
+# These error classes may not exist in all pyrofork versions — import safely
+try:
+    from pyrogram.errors import EmailUnverified
+except ImportError:
+    EmailUnverified = Exception   # fallback: treat as generic Exception
+try:
+    from pyrogram.errors import NewPasswordRequired
+except ImportError:
+    NewPasswordRequired = Exception
 from info import ADMIN_ID, API_ID, API_HASH
 from database import get_config, accounts_col
 import asyncio
