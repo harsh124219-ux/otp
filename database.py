@@ -24,12 +24,11 @@ def init_db():
 init_db()
 
 # Ensure collections are only accessed if db is initialized
-users_col = db["users"] if db else None
-transactions_col = db["transactions"] if db else None
-accounts_col = db["accounts"] if db else None
-orders_col = db["orders"] if db else None
-config_col = db["config"] if db else None
-
+users_col = db["users"] if db is not None else None
+transactions_col = db["transactions"] if db is not None else None
+accounts_col = db["accounts"] if db is not None else None
+orders_col = db["orders"] if db is not None else None
+config_col = db["config"] if db is not None else None
 
 
 
