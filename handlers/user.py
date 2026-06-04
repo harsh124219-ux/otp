@@ -1,4 +1,4 @@
-from pyrogram import Client
+from pyrogram import Client, enums
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from info import START_MESSAGE, RULES_TEXT, SUPPORT_TEXT, PROFILE_TEXT, HELP_TEXT, USER_HELP, ADMIN_HELP
 from database import get_balance, get_user, get_user_orders, get_config, is_admin
@@ -148,19 +148,19 @@ async def handle_message(client: Client, message: Message):
         from database import add_transaction, utr_exists, get_config
         utr = message.text.strip()
 
-# Validate that UTR consists only of digits and falls within length rules (12 to 22 digits)
-if not utr.isdigit() or not (12 <= len(utr) <= 22):
-    await message.reply_text(
-        "⚠️ **Invalid UTR Format!**\n\n"
-        "Your transaction UTR code must contain only numbers and be between **12 and 22 digits** long.\n\n"
-        "💡 **Example of a valid UTR:**\n"
-        "`202406041140` or `614207184925823`"
-        )
-    return
+        # Validate that UTR consists only of digits and falls within length rules (12 to 22 digits)
+        if not utr.isdigit() or not (12 <= len(utr) <= 22):
+            await message.reply_text(
+                "⚠️ **Invalid UTR Format!**\n\n"
+                "Your transaction UTR code must contain only numbers and be between **12 and 22 digits** long.\n\n"
+                "💡 **Example of a valid UTR:**\n"
+                "`202406041140` or `614207184925823`"
+            )
+            return
 
-if utr_exists(utr):
-    await message.reply_text("❌ This UTR has already been submitted. Contact admin if this is an error.")
-    return
+        if utr_exists(utr):
+            await message.reply_text("❌ This UTR has already been submitted. Contact admin if this is an error.")
+            return
 
         amount = state["amount"]
         ss = state["ss"]
@@ -180,11 +180,12 @@ if utr_exists(utr):
             ]
         ])
 
-        for admin in config.get("admins", []):
-            try:
-                await client.send_photo(admin, ss, caption=caption, reply_markup=markup)
-            except Exception as e:
-                print(f"Failed to notify admin {admin}: {e}")
+        from info import LOG_GROUP
+        # Route verification message layout to specified LOG_GROUP channel instead
+        try:
+            await client.send_photo(LOG_GROUP, ss, caption=caption, reply_markup=markup)
+        except Exception as e:
+            print(f"Failed to route log verification message details to Log Group: {e}")
 
         await message.reply_text(
             "✅ **Payment submitted for verification!**\n\n"
@@ -213,3 +214,4 @@ async def orders_menu(client: Client, callback: CallbackQuery):
             ])
         buttons.append([InlineKeyboardButton("🔙 Back", callback_data="back_to_main")])
         await callback.message.edit_text("📦 **YOUR ORDERS**", reply_markup=InlineKeyboardMarkup(buttons))
+
