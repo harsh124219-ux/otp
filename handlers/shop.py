@@ -115,33 +115,52 @@ async def get_otp_logic(client: Client, callback: CallbackQuery):
         await callback.answer("Order details invalid.", show_alert=True)
         return
 
-    await callback.answer("⏳ Checking Telegram for fresh code alerts...", show_alert=False)
+    await callback.answer("⏳ Fetching fresh code alerts directly from Telegram...", show_alert=False)
 
     try:
+        # Connect each time dynamically to capture real-time profile events
         user_client = Client(f"s_{order['phone']}", API_ID, API_HASH, session_string=order["session_string"], in_memory=True)
         await user_client.connect()
 
-        otp_msg = "❌ No codes found yet. Please send a new code request from your device."
-        fifteen_minutes_ago = datetime.utcnow() - timedelta(minutes=15)
+        otp_msg = "❌ No fresh login codes discovered. Please trigger an official registration request from your app."
+        
+        # Strictly check codes received within the last 2 minutes
+        two_minutes_ago = datetime.utcnow() - timedelta(minutes=2)
 
         async for m in user_client.get_chat_history(777000, limit=5):
-            if m.date and m.date >= fifteen_minutes_ago:
+            if m.date and m.date >= two_minutes_ago:
                 if m.text:
                     otp_msg = m.text
                     break
 
         await user_client.disconnect()
         
+        # Send Message 1: The real-time OTP message block
         await callback.message.reply_text(
-            f"📩 **OTP FOR** `{order['phone']}` (Last 15m):\n\n`{otp_msg}`",
+            f"📩 **OTP FOR** `{order['phone']}` (Last 2m):\n\n`{otp_msg}`",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("🔄 Refresh New OTP", callback_data=f"get_otp_{order_id}")],
                 [InlineKeyboardButton("🚪 Logout & Close Session", callback_data=f"logout_acc_{order_id}")]
             ])
         )
+
+        # Send Message 2: Check account payload inside database to extract and forward its custom 2FA profile credentials
+        account_data = accounts_col.find_one({"phone": order['phone']})
+        two_fa_password = account_data.get("password") if account_data else None
+
+        if two_fa_password:
+            await client.send_message(
+                chat_id=callback.from_user.id,
+                text=f"🔐 **2FA Password for** `{order['phone']}`:\n\n`{two_fa_password}`"
+            )
+        else:
+            await client.send_message(
+                chat_id=callback.from_user.id,
+                text=f"ℹ️ **2FA Status for** `{order['phone']}`:\nNo password is set or required for this account."
+            )
+
     except Exception as e:
         await callback.message.reply_text(f"❌ Error communicating with Telegram session: `{e}`")
-
 async def logout_acc_logic(client: Client, callback: CallbackQuery):
     order_id = callback.data.replace("logout_acc_", "")
     order = get_order(order_id)
