@@ -78,19 +78,23 @@ async def profile_menu(client: Client, callback: CallbackQuery):
 async def deposit_menu(client: Client, callback: CallbackQuery):
     config = get_config()
     upi_id = config.get("upi_id", "Not Set")
-    upi_name = config.get("upi_name", "Not Set")
     upi_image = config.get("upi_image_file_id")
 
+    # Text includes instructions
     text = (
         f"💳 **DEPOSIT FUNDS**\n\n"
         f"Pay via UPI to:\n"
-        f"🏦 **UPI ID:** `{upi_id}`\n"
-        f"After payment, enter the amount below:"
+        f"🏦 **UPI ID:** `{upi_id}`\n\n"
+        f"After payment, please send the transaction screenshot.\n"
+        f"Enter the amount to proceed."
     )
 
-    markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="back_to_main")]])
+    # Keyboard with Cancel button
+    markup = InlineKeyboardMarkup([
+        [InlineKeyboardButton("❌ Cancel", callback_data="cancel_deposit")]
+    ])
 
-    # If admin has uploaded a UPI QR image, show it
+    # 1. Send the new deposit message (photo or text)
     if upi_image:
         try:
             await callback.message.reply_photo(
@@ -98,17 +102,20 @@ async def deposit_menu(client: Client, callback: CallbackQuery):
                 caption=text,
                 reply_markup=markup
             )
-            try:
-                await callback.message.delete()
-            except Exception:
-                pass
         except Exception:
-            await callback.message.edit_text(text, reply_markup=markup)
+            await callback.message.reply(text, reply_markup=markup)
     else:
-        await callback.message.edit_text(text, reply_markup=markup)
+        await callback.message.reply(text, reply_markup=markup)
 
+    # 2. Delete the old menu message
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+
+    # 3. Set the user state
     user_states[callback.from_user.id] = {"step": "waiting_amount"}
-
+    await callback.answer()
 
 async def handle_message(client: Client, message: Message):
     user_id = message.from_user.id
