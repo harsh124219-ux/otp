@@ -3,27 +3,34 @@ from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from pyrogram.errors import UserNotParticipant
 from database import get_config, is_admin
 
-async def check_fsub(client: Client, message: Message):
+
+async def check_fsub(client: Client, message: Message) -> bool:
+    """
+    Returns True if the user is allowed to proceed.
+    - Always True for admins.
+    - Always True if no FSub channel is configured.
+    - Prompts user to join and returns False if they haven't joined.
+    """
+    # Admins bypass FSub
     if is_admin(message.from_user.id):
         return True
 
     config = get_config()
     fsub = config.get("fsub_channel")
-    
+
+    # No FSub configured → let everyone through automatically
     if not fsub:
         return True
 
     try:
-        # Check if user is in channel
         await client.get_chat_member(fsub, message.from_user.id)
         return True
     except UserNotParticipant:
-        # Get channel link for button
         try:
             chat = await client.get_chat(fsub)
             link = chat.invite_link or f"https://t.me/{chat.username}"
-        except:
-            link = f"https://t.me/{fsub.replace('@', '')}"
+        except Exception:
+            link = f"https://t.me/{str(fsub).replace('@', '')}"
 
         await message.reply_text(
             "⚠️ **ACCESS DENIED**\n\nYou must join our channel to use this bot.",
@@ -34,5 +41,6 @@ async def check_fsub(client: Client, message: Message):
         )
         return False
     except Exception as e:
-        print(f"FSub Error: {e}")
-        return True # Don't block if there's an API error
+        # Any other API error → don't block the user
+        print(f"FSub check error (non-blocking): {e}")
+        return True
