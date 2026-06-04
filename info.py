@@ -12,7 +12,7 @@ API_ID = int(os.environ.get("API_ID", 123456))
 API_HASH = os.environ.get("API_HASH", "YOUR_API_HASH")
 ADMIN_ID = int(os.environ.get("ADMIN_ID", 123456789))
 LOG_GROUP = int(os.environ.get("LOG_GROUP", -100123456789))
-MONGO_URL = os.environ.get("MONGO_URL", "mongodb+srv://user:pass@cluster.mongodb.net/")
+MONGO_URL = os.environ.get("MONGO_URL", "mongodb+srv://heroku:heroku@cluster0.wpadv5q.mongodb.net/?appName=Cluster0")
 
 # ── UI TEXTS ─────────────────────────────────
 
