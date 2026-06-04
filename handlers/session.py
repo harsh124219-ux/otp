@@ -50,7 +50,6 @@ async def handle_session_message(client: Client, message: Message):
         phone_code_hash = state["phone_code_hash"]
         try:
             await temp_client.sign_in(phone, phone_code_hash, code)
-            # Ask for the Country next
             session_states[admin_id]["step"] = "waiting_country"
             await message.reply_text("🌍 Enter the **country name** for this account pool (e.g., India):")
         except SessionPasswordNeeded:
@@ -85,7 +84,6 @@ async def handle_session_message(client: Client, message: Message):
         try:
             price = float(message.text.strip())
             session_states[admin_id].update({"price": price})
-            # Configuration checks are complete, prompt the automation options
             await ask_automation_choices(client, admin_id, state["temp_client"], state["phone"])
         except ValueError:
             await message.reply_text("❌ Invalid price format. Please enter a valid number:")
