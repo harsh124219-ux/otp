@@ -29,6 +29,10 @@ async def start_h(client, message):
 async def help_h(client, message):
     await help_menu(client, message)
 
+@app.on_message(filters.command("shop") & filters.private)
+async def shop_cmd_h(client, message):
+    await shop_menu(client, message)
+
 @app.on_message(filters.command(["stats", "addbal", "broadcast", "addadmin", "rmadmin", "setfsub", "setupi", "addacc", "recovery", "fa2", "sold", "login"]) & filters.private)
 async def admin_cmds(client, message: Message):
     if not is_admin(message.from_user.id):
@@ -54,7 +58,7 @@ async def admin_cmds(client, message: Message):
         await login_command(client, message)
 
 # ── Message Handler ─────────────────────────
-@app.on_message(filters.private & ~filters.command(["start", "help", "stats", "addbal", "broadcast", "addadmin", "rmadmin", "setfsub", "setupi", "addacc", "recovery", "fa2", "sold", "login"]))
+@app.on_message(filters.private & ~filters.command(["start", "help", "shop", "stats", "addbal", "broadcast", "addadmin", "rmadmin", "setfsub", "setupi", "addacc", "recovery", "fa2", "sold", "login"]))
 async def msg_h(client, message):
     from handlers.session import session_states, handle_session_message
     from handlers.payment import payment_admin_states, handle_admin_rejection_reason
@@ -130,7 +134,6 @@ async def main():
 
 
 if __name__ == "__main__":
-    # Fix for Python 3.10+ / Heroku: explicitly create and set event loop
     try:
         loop = asyncio.get_event_loop()
         if loop.is_closed():
