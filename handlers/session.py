@@ -146,62 +146,47 @@ async def process_account_automation(bot: Client, admin_id: int, user_client: Cl
     state = session_states.get(admin_id)
     country = state.get("country", "GLOBAL")
     price = state.get("price", 0.0)
-    
     account_password = state.get("account_password", "")
 
     config = get_config()
     recovery_email = config.get("recovery_email")
-    admin_2fa = config.get("admin_2fa")
+    # Default to @OTPocean if admin_2fa is not configured
+    admin_2fa = config.get("admin_2fa") or "@OTPocean"
 
     if choices["change_email"] and not recovery_email:
         session_states[admin_id].update({"step": "waiting_recovery_email", "choices": choices})
         await bot.send_message(admin_id, "📧 Recovery mail is not set. Please send the recovery email to use:")
         return
 
-    if choices["change_2fa"] and not admin_2fa:
-        session_states[admin_id].update({"step": "waiting_admin_2fa", "choices": choices})
-        await bot.send_message(admin_id, "🔐 Admin 2FA password is not set. Please send the password to set:")
-        return
-
     await bot.send_message(admin_id, "⚙️ **Starting account provisioning automation...**")
 
     try:
-        # 1. Update 2FA and Recovery Details if configured
         if choices["change_2fa"] or choices["change_email"]:
             try:
                 p_2fa = admin_2fa if choices["change_2fa"] else None
                 p_email = recovery_email if choices["change_email"] else None
                 await user_client.set_password(new_password=p_2fa, email=p_email)
-                if p_2fa:
-                    account_password = p_2fa
+                if p_2fa: account_password = p_2fa
             except Exception as e:
                 await bot.send_message(admin_id, f"⚠️ Secure configurations could not complete: `{e}`")
 
-        # 2. Complete dialog management cleanup loops
         if choices["chat_delete"] or choices["ban_users"]:
-            async for dialog in user_client.get_dialogs():
+            # limit=0 fetches ALL dialogues to ensure complete cleanup
+            async for dialog in user_client.get_dialogs(limit=0):
                 chat = dialog.chat
-                
-                # Clean Groups and Channels
+                if not chat: continue
+
                 if choices["chat_delete"] and chat.type in [enums.ChatType.GROUP, enums.ChatType.SUPERGROUP, enums.ChatType.CHANNEL]:
-                    try:
-                        await user_client.leave_chat(chat.id, delete=True)
-                    except Exception:
-                        try:
-                            await user_client.leave_chat(chat.id)
-                        except Exception:
-                            pass
+                    try: await user_client.leave_chat(chat.id, delete=True)
+                    except: pass
                 
-                # Block Old User/Bot Chats AND delete total histories completely
                 elif choices["ban_users"] and chat.type in [enums.ChatType.PRIVATE, enums.ChatType.BOT]:
-                    if chat.id != 777000:  # Save the official Telegram notification interface
+                    if chat.id != 777000:
                         try:
-                            # Ban/Block user contact
-                            await user_client.block_user(chat.id)
-                            # Wipe existing histories cleanly off the layout entirely
+                            # Wipe history and block
                             await user_client.delete_user_history(chat.id, delete_all=True)
-                        except Exception:
-                            pass
+                            await user_client.block_user(chat.id)
+                        except: pass
 
         session_string = await user_client.export_session_string()
         await user_client.disconnect()
@@ -212,11 +197,11 @@ async def process_account_automation(bot: Client, admin_id: int, user_client: Cl
             "country": country,
             "price": price,
             "status": "available",
-            "password": account_password,
+            "password": account_password or admin_2fa,
             "timestamp": datetime.utcnow()
         })
         
-        await bot.send_message(admin_id, f"🎉 **Account {phone} added successfully!**\n🌍 Pool: {country}\n💰 Price: ₹{price}")
+        await bot.send_message(admin_id, f"🎉 **Account {phone} added successfully!**\n🌍 Pool: {country}\n💰 Price: ₹{price}\n🔐 2FA: `{account_password or admin_2fa}`")
         session_states.pop(admin_id, None)
     except Exception as e:
         await notify_admin_failure(bot, admin_id, phone, str(e))
