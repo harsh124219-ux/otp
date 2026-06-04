@@ -5,7 +5,8 @@ from database import (
     update_account_status, create_order, get_order, close_order, accounts_col
 )
 from info import API_ID, API_HASH, LOG_GROUP
-from datetime import datetime, timedelta
+# FIX BUG 5: import timezone for aware datetime comparison
+from datetime import datetime, timedelta, timezone
 
 
 # ─────────────────────────────────────────────────────────────
@@ -23,11 +24,6 @@ def mask_number(phone: str) -> str:
 
 
 async def _edit(callback: CallbackQuery, text: str, markup: InlineKeyboardMarkup):
-    """
-    Safely edit the existing message.
-    Falls back to sending a new message only if the edit genuinely fails.
-    This is the ONLY way we update messages — no new messages ever sent on navigation.
-    """
     try:
         await callback.message.edit_text(text, reply_markup=markup)
     except Exception:
@@ -39,10 +35,6 @@ async def _edit(callback: CallbackQuery, text: str, markup: InlineKeyboardMarkup
 # ─────────────────────────────────────────────────────────────
 
 async def shop_menu(client: Client, update):
-    """
-    Works with both Message (from /shop command) and CallbackQuery (from button click).
-    Always EDITS on callback, always REPLIES on direct message.
-    """
     is_cb = isinstance(update, CallbackQuery)
     message = update.message if is_cb else update
 
@@ -102,10 +94,8 @@ async def sort_options_menu(client: Client, callback: CallbackQuery):
 
 async def view_country_accounts(client: Client, callback: CallbackQuery):
     parts = callback.data.split("_")
-    # Format: view_country_{COUNTRY}_{low|high}
-    # country can have underscores — join middle parts
-    sort_type = parts[-1]                        # last element
-    country   = "_".join(parts[2:-1])           # everything between "country_" and sort_type
+    sort_type = parts[-1]
+    country   = "_".join(parts[2:-1])
 
     sort_order = "low_to_high" if sort_type == "low" else "high_to_low"
     accounts = get_accounts_by_country_sorted(country, sort_order)
@@ -113,7 +103,6 @@ async def view_country_accounts(client: Client, callback: CallbackQuery):
 
     if not available_accounts:
         await callback.answer("❌ Out of stock in this category.", show_alert=True)
-        # Go back to shop automatically
         await shop_menu(client, callback)
         return
 
@@ -144,7 +133,6 @@ async def buy_account(client: Client, callback: CallbackQuery):
     phone   = callback.data.replace("buy_acc_", "")
     user_id = callback.from_user.id
 
-    # 1. Verify availability BEFORE touching balance
     account = accounts_col.find_one({"phone": phone, "status": "available"})
     if not account:
         await callback.answer("❌ This account was just sold to someone else!", show_alert=True)
@@ -156,25 +144,21 @@ async def buy_account(client: Client, callback: CallbackQuery):
         await callback.answer(f"❌ Insufficient balance! You need ₹{price}", show_alert=True)
         return
 
-    # 2. Deduct balance
     if not deduct_balance(user_id, price):
         await callback.answer("❌ Payment error. Please try again.", show_alert=True)
         return
 
-    # 3. Atomic status lock — prevents double-sell
     result = accounts_col.update_one(
         {"phone": phone, "status": "available"},
         {"$set": {"status": "sold"}}
     )
     if result.modified_count == 0:
-        # Race condition — refund and notify
         from database import add_balance
         add_balance(user_id, price)
         await callback.answer("❌ Someone bought this a split second before you! Refunded.", show_alert=True)
         await shop_menu(client, callback)
         return
 
-    # 4. Create order record
     order_id = create_order(
         user_id, phone,
         account["session_string"],
@@ -182,7 +166,6 @@ async def buy_account(client: Client, callback: CallbackQuery):
         price
     )
 
-    # 5. Log to admin group
     log_text = (
         f"🛒 **NEW SALE**\n\n"
         f"👤 Buyer: `{user_id}`\n"
@@ -197,7 +180,6 @@ async def buy_account(client: Client, callback: CallbackQuery):
     except Exception as e:
         print(f"[LOG] Failed to send purchase log: {e}")
 
-    # 6. Confirm to user (edit in place)
     await _edit(
         callback,
         f"🎉 **Purchase Successful!**\n\n"
@@ -236,7 +218,8 @@ async def get_otp_logic(client: Client, callback: CallbackQuery):
         await user_client.connect()
 
         otp_msg = None
-        two_minutes_ago = datetime.utcnow() - timedelta(minutes=2)
+        # FIX BUG 5: use timezone-aware datetime so comparison with m.date works
+        two_minutes_ago = datetime.now(timezone.utc) - timedelta(minutes=2)
 
         async for m in user_client.get_chat_history(777000, limit=5):
             if m.date and m.date >= two_minutes_ago and m.text:
@@ -264,10 +247,8 @@ async def get_otp_logic(client: Client, callback: CallbackQuery):
             [InlineKeyboardButton("🔙 Back to Orders", callback_data="open_orders")]
         ])
 
-        # Send OTP as new message (intentional — user needs to see it clearly, not lose it on next edit)
         await callback.message.reply_text(result_text, reply_markup=markup)
 
-        # Send 2FA password separately (private, sensitive)
         account_data = accounts_col.find_one({"phone": order["phone"]})
         two_fa = account_data.get("password") if account_data else None
         recovery_email = account_data.get("recovery_email") if account_data else None
