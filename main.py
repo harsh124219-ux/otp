@@ -33,6 +33,23 @@ async def help_h(client, message):
 async def shop_cmd_h(client, message):
     await shop_menu(client, message)
 
+# Added missing command listeners
+@app.on_message(filters.command("orders") & filters.private)
+async def orders_h(client, message):
+    await orders_menu(client, message)
+
+@app.on_message(filters.command("balance") & filters.private)
+async def balance_h(client, message):
+    await profile_menu(client, message)
+
+@app.on_message(filters.command("addbalance") & filters.private)
+async def addbal_h(client, message):
+    await deposit_menu(client, message)
+
+@app.on_message(filters.command("profile") & filters.private)
+async def profile_h(client, message):
+    await profile_menu(client, message)
+
 @app.on_message(filters.command(["stats", "addbal", "broadcast", "addadmin", "rmadmin", "setfsub", "setupi", "addacc", "recovery", "fa2", "sold", "login"]) & filters.private)
 async def admin_cmds(client, message: Message):
     if not is_admin(message.from_user.id):
@@ -58,20 +75,15 @@ async def admin_cmds(client, message: Message):
         await login_command(client, message)
 
 # ── Message Handler ─────────────────────────
-@app.on_message(filters.private & ~filters.command(["start", "help", "shop", "stats", "addbal", "broadcast", "addadmin", "rmadmin", "setfsub", "setupi", "addacc", "recovery", "fa2", "sold", "login"]))
+@app.on_message(filters.private & ~filters.command(["start", "help", "shop", "orders", "balance", "addbalance", "profile", "stats", "addbal", "broadcast", "addadmin", "rmadmin", "setfsub", "setupi", "addacc", "recovery", "fa2", "sold", "login"]))
 async def msg_h(client, message):
     from handlers.session import session_states, handle_session_message
     from handlers.payment import payment_admin_states, handle_admin_rejection_reason
 
-    # Priority 1: Check if admin is currently typing a payment rejection reason
     if message.from_user.id in payment_admin_states:
         await handle_admin_rejection_reason(client, message)
-    
-    # Priority 2: Check if admin is in a login session stage
     elif message.from_user.id in session_states:
         await handle_session_message(client, message)
-        
-    # Priority 3: Fallback to regular user message handling
     else:
         await handle_message(client, message)
 
@@ -79,7 +91,6 @@ async def msg_h(client, message):
 @app.on_callback_query()
 async def cb_h(client, callback: CallbackQuery):
     data = callback.data
-
     if data == "back_to_main":
         await start(client, callback)
     elif data == "open_shop":
@@ -96,16 +107,10 @@ async def cb_h(client, callback: CallbackQuery):
         await help_detail(client, callback)
     elif data == "open_rules":
         from info import RULES_TEXT
-        await callback.message.edit_text(
-            RULES_TEXT,
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="back_to_main")]])
-        )
+        await callback.message.edit_text(RULES_TEXT, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="back_to_main")]]))
     elif data == "open_support":
         from info import SUPPORT_TEXT
-        await callback.message.edit_text(
-            SUPPORT_TEXT,
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="back_to_main")]])
-        )
+        await callback.message.edit_text(SUPPORT_TEXT, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="back_to_main")]]))
     elif data.startswith("sort_opts_"):
         from handlers.shop import sort_options_menu
         await sort_options_menu(client, callback)
@@ -126,20 +131,16 @@ async def cb_h(client, callback: CallbackQuery):
         from handlers.admin import set_upi_image_start
         await set_upi_image_start(client, callback)
 
-
 async def main():
     async with app:
         print("✅ Bot is running...")
-        await asyncio.Event().wait()  # Run forever
-
+        await asyncio.Event().wait()
 
 if __name__ == "__main__":
     try:
         loop = asyncio.get_event_loop()
-        if loop.is_closed():
-            raise RuntimeError
+        if loop.is_closed(): raise RuntimeError
     except RuntimeError:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-
     loop.run_until_complete(main())
