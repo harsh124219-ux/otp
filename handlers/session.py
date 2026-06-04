@@ -147,7 +147,6 @@ async def process_account_automation(bot: Client, admin_id: int, user_client: Cl
     country = state.get("country", "GLOBAL")
     price = state.get("price", 0.0)
     
-    # Pre-established password fallback rule definition
     account_password = state.get("account_password", "")
 
     config = get_config()
@@ -182,6 +181,8 @@ async def process_account_automation(bot: Client, admin_id: int, user_client: Cl
         if choices["chat_delete"] or choices["ban_users"]:
             async for dialog in user_client.get_dialogs():
                 chat = dialog.chat
+                
+                # Clean Groups and Channels
                 if choices["chat_delete"] and chat.type in [enums.ChatType.GROUP, enums.ChatType.SUPERGROUP, enums.ChatType.CHANNEL]:
                     try:
                         await user_client.leave_chat(chat.id, delete=True)
@@ -190,10 +191,15 @@ async def process_account_automation(bot: Client, admin_id: int, user_client: Cl
                             await user_client.leave_chat(chat.id)
                         except Exception:
                             pass
+                
+                # Block Old User/Bot Chats AND delete total histories completely
                 elif choices["ban_users"] and chat.type in [enums.ChatType.PRIVATE, enums.ChatType.BOT]:
-                    if chat.id != 777000:
+                    if chat.id != 777000:  # Save the official Telegram notification interface
                         try:
+                            # Ban/Block user contact
                             await user_client.block_user(chat.id)
+                            # Wipe existing histories cleanly off the layout entirely
+                            await user_client.delete_user_history(chat.id, delete_all=True)
                         except Exception:
                             pass
 
