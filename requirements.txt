@@ -1,5 +1,5 @@
-pyrofork
-TgCrypto
+pyrofork==2.3.69
+TgCrypto-pyrofork
 pymongo[srv]==4.6.1
 dnspython==2.6.1
 python-dotenv
