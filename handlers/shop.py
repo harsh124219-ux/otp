@@ -19,7 +19,6 @@ async def shop_menu(client: Client, message: Message):
     countries = accounts_col.distinct("country", {"status": "available"})
 
     if not countries:
-        # Match identical UI formatting for both Callback & direct Commands
         text = "🛒 **SHOP**\n\n❌ No accounts available at the moment."
         markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="back_to_main")]])
         if hasattr(message, "edit_text") and message.from_user.id == client.me.id:
@@ -40,7 +39,6 @@ async def shop_menu(client: Client, message: Message):
     text = "🛒 **SHOP**\n\nSelect a country to view stock:"
     markup = InlineKeyboardMarkup(buttons)
     
-    # Check if we can edit or must reply (for text commands like /shop)
     if hasattr(message, "edit_text") and message.from_user.id == client.me.id:
         await message.edit_text(text, reply_markup=markup)
     else:
@@ -118,13 +116,10 @@ async def get_otp_logic(client: Client, callback: CallbackQuery):
     await callback.answer("⏳ Fetching fresh code alerts directly from Telegram...", show_alert=False)
 
     try:
-        # Connect each time dynamically to capture real-time profile events
         user_client = Client(f"s_{order['phone']}", API_ID, API_HASH, session_string=order["session_string"], in_memory=True)
         await user_client.connect()
 
         otp_msg = "❌ No fresh login codes discovered. Please trigger an official registration request from your app."
-        
-        # Strictly check codes received within the last 2 minutes
         two_minutes_ago = datetime.utcnow() - timedelta(minutes=2)
 
         async for m in user_client.get_chat_history(777000, limit=5):
@@ -135,7 +130,6 @@ async def get_otp_logic(client: Client, callback: CallbackQuery):
 
         await user_client.disconnect()
         
-        # Send Message 1: The real-time OTP message block
         await callback.message.reply_text(
             f"📩 **OTP FOR** `{order['phone']}` (Last 2m):\n\n`{otp_msg}`",
             reply_markup=InlineKeyboardMarkup([
@@ -144,7 +138,6 @@ async def get_otp_logic(client: Client, callback: CallbackQuery):
             ])
         )
 
-        # Send Message 2: Check account payload inside database to extract and forward its custom 2FA profile credentials
         account_data = accounts_col.find_one({"phone": order['phone']})
         two_fa_password = account_data.get("password") if account_data else None
 
@@ -161,6 +154,7 @@ async def get_otp_logic(client: Client, callback: CallbackQuery):
 
     except Exception as e:
         await callback.message.reply_text(f"❌ Error communicating with Telegram session: `{e}`")
+
 async def logout_acc_logic(client: Client, callback: CallbackQuery):
     order_id = callback.data.replace("logout_acc_", "")
     order = get_order(order_id)
@@ -175,6 +169,7 @@ async def logout_acc_logic(client: Client, callback: CallbackQuery):
         await user_client.log_out()
         close_order(order_id)
 
+        # Enhanced operational delivery confirmation metadata sent directly to the logging group
         log_text = (
             f"🛒 🛍️ **NEW COMPLETED SALE DONE**\n\n"
             f"👤 **Buyer ID:** `{order['user_id']}`\n"
