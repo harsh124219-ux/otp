@@ -7,6 +7,8 @@ db = client["otpbot"]
 
 users_col = db["users"]
 transactions_col = db["transactions"]
+sessions_col = db["sessions"]
+sales_col = db["sales"]
 
 
 # ── User functions ──────────────────────────
@@ -73,3 +75,38 @@ def update_transaction_status(utr: str, status: str):
 
 def utr_exists(utr: str) -> bool:
     return transactions_col.find_one({"utr": utr}) is not None
+
+
+# ── Session functions ───────────────────────
+
+def save_session(session_string: str):
+    # Store only one session for now, or you can expand this to multiple
+    sessions_col.update_one(
+        {"type": "admin_session"},
+        {"$set": {"session_string": session_string, "updated_at": datetime.now()}},
+        upsert=True
+    )
+
+
+def get_session():
+    doc = sessions_col.find_one({"type": "admin_session"})
+    return doc["session_string"] if doc else None
+
+
+def delete_session():
+    sessions_col.delete_one({"type": "admin_session"})
+
+
+# ── Sales functions ─────────────────────────
+
+def log_otp_sale(user_id: int, content: str, price: float):
+    sales_col.insert_one({
+        "user_id": user_id,
+        "content": content,
+        "price": price,
+        "timestamp": datetime.now()
+    })
+
+
+def get_sales_history(user_id: int, limit: int = 10):
+    return list(sales_col.find({"user_id": user_id}).sort("timestamp", -1).limit(limit))

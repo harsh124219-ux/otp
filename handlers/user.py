@@ -4,7 +4,7 @@ from pyrogram.types import (
     InlineKeyboardButton, CallbackQuery
 )
 from info import UPI_ID, UPI_NAME, START_MESSAGE, OTP_PRICE
-from database import get_balance, get_user
+from database import get_balance, get_user, get_sales_history
 
 # Tracks users mid-flow: {user_id: {"step": ..., "amount": ...}}
 user_states = {}
@@ -18,8 +18,9 @@ async def start(client: Client, message: Message):
             upi=UPI_ID
         ),
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("💳 Buy OTP", callback_data="buy_otp")],
-            [InlineKeyboardButton("💰 Balance", callback_data="check_balance")]
+            [InlineKeyboardButton("💳 Buy OTP", callback_data="buy_otp_start")],
+            [InlineKeyboardButton("💰 Balance", callback_data="check_balance")],
+            [InlineKeyboardButton("📜 History", callback_data="view_history")]
         ])
     )
 
@@ -40,9 +41,32 @@ async def buy(client: Client, message: Message):
     user_states[message.from_user.id] = {"step": "waiting_amount"}
 
 
+async def history(client: Client, message: Message):
+    user_id = message.from_user.id
+    sales = get_sales_history(user_id)
+    
+    if not sales:
+        await message.reply_text("📜 You haven't purchased any OTPs yet.")
+        return
+
+    text = "📜 **Your Purchase History**\n\n"
+    for sale in sales:
+        time = sale["timestamp"].strftime("%d-%m %H:%M")
+        text += f"📅 {time} | ₹{sale['price']}\n`{sale['content'][:50]}...`\n\n"
+    
+    await message.reply_text(text)
+
+
 async def handle_message(client: Client, message: Message):
     user_id = message.from_user.id
     state = user_states.get(user_id)
+
+    # Check if this is for session login (Admin only)
+    from handlers.session import session_states, handle_session_message
+    from info import ADMIN_ID
+    if user_id == ADMIN_ID and user_id in session_states:
+        await handle_session_message(client, message)
+        return
 
     if not state:
         return
@@ -87,7 +111,7 @@ async def handle_message(client: Client, message: Message):
     # Step 3: User sends UTR
     elif step == "waiting_utr":
         from database import add_transaction, utr_exists
-        from info import LOG_GROUP, ADMIN_ID
+        from info import LOG_GROUP
 
         utr = message.text.strip()
 
@@ -149,8 +173,15 @@ async def handle_message(client: Client, message: Message):
 
 async def button_handler(client: Client, callback: CallbackQuery):
     await callback.answer()
-    if callback.data == "buy_otp":
-        await buy(client, callback.message)
-    elif callback.data == "check_balance":
+    data = callback.data
+    
+    if data == "buy_otp_start":
+        from handlers.otp import buy_otp_handler
+        await buy_otp_handler(client, callback)
+    elif data == "check_balance":
         bal = get_balance(callback.from_user.id)
         await callback.message.reply_text(f"💰 Your balance: ₹{bal}")
+    elif data == "buy_otp": # From main menu
+        await buy(client, callback.message)
+    elif data == "view_history":
+        await history(client, callback.message)
