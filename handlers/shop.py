@@ -14,6 +14,10 @@ def mask_number(phone: str) -> str:
 
 
 async def shop_menu(client: Client, message: Message):
+    # Fix: If this function is triggered via a callback button, extract the message object safely
+    if isinstance(message, CallbackQuery):
+        message = message.message
+
     countries = accounts_col.distinct("country", {"status": "available"})
 
     if not countries:
