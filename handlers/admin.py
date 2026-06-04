@@ -197,7 +197,7 @@ async def handle_admin_msg(client: Client, message: Message):
         await message.reply_text("🌍 Enter the **country name** (e.g., India):")
 
     elif step == "country":
-        admin_states[admin_id].update({"step": "price", "country": message.text.strip()})
+        admin_states[admin_id].update({"step": "price", "country": message.text.strip().upper()})
         await message.reply_text("💰 Enter the **price** for this account (e.g., 150):")
 
     elif step == "price":
