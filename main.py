@@ -57,8 +57,17 @@ async def admin_cmds(client, message: Message):
 @app.on_message(filters.private & ~filters.command(["start", "help", "stats", "addbal", "broadcast", "addadmin", "rmadmin", "setfsub", "setupi", "addacc", "recovery", "fa2", "sold", "login"]))
 async def msg_h(client, message):
     from handlers.session import session_states, handle_session_message
-    if message.from_user.id in session_states:
+    from handlers.payment import payment_admin_states, handle_admin_rejection_reason
+
+    # Priority 1: Check if admin is currently typing a payment rejection reason
+    if message.from_user.id in payment_admin_states:
+        await handle_admin_rejection_reason(client, message)
+    
+    # Priority 2: Check if admin is in a login session stage
+    elif message.from_user.id in session_states:
         await handle_session_message(client, message)
+        
+    # Priority 3: Fallback to regular user message handling
     else:
         await handle_message(client, message)
 
@@ -103,6 +112,9 @@ async def cb_h(client, callback: CallbackQuery):
         await logout_acc_logic(client, callback)
     elif data.startswith("approve_") or data.startswith("reject_"):
         await payment_callback(client, callback)
+    elif data.startswith("setup_"):
+        from handlers.session import handle_automation_callback
+        await handle_automation_callback(client, callback)
     elif data == "set_upi_image":
         from handlers.admin import set_upi_image_start
         await set_upi_image_start(client, callback)
