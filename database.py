@@ -262,6 +262,19 @@ def get_available_accounts(country: str = None):
         return []
 
 
+def get_accounts_by_country_sorted(country: str, sort_order: str):
+    """Fetches available shop inventory items sorted by user price preference."""
+    if accounts_col is None:
+        return []
+    direction = 1 if sort_order == "low_to_high" else -1
+    try:
+        # Status altered from 'active' to 'available' to correctly track unpurchased stock
+        return list(accounts_col.find({"country": country.upper(), "status": "available"}).sort("price", direction))
+    except Exception as e:
+        print(f"❌ Error fetching sorted accounts: {e}")
+        return []
+
+
 def update_account_status(phone: str, status: str):
     if accounts_col is None:
         print("❌ MongoDB not initialized, cannot update account status.")
