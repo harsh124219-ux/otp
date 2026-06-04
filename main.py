@@ -70,7 +70,7 @@ async def cb_h(client, callback: CallbackQuery):
     if data == "back_to_main":
         await start(client, callback)
     elif data == "open_shop":
-        await shop_menu(client, callback.message)
+        await shop_menu(client, callback)
     elif data == "open_deposit":
         await deposit_menu(client, callback)
     elif data == "open_profile":
