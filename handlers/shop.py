@@ -126,3 +126,8 @@ async def get_otp_logic(client: Client, callback: CallbackQuery):
             f"📩 **OTP FOR** `{order['phone']}` (Last 15m):\n\n`{otp_msg}`",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("🔄 Refresh New OTP", callback_data=f"get_otp_{order_id}")],
+                [InlineKeyboardButton("🚪 Logout & Close Session", callback_data=f"logout_acc_{order_id}")]
+            ])
+        )
+    except Exception as e:
+        await callback.message.reply_text(f"❌ Error communicating with Telegram session: `{e}`")
