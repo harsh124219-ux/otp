@@ -1,152 +1,129 @@
 from pyrogram import Client, filters
-from pyrogram.types import (
-    Message, InlineKeyboardMarkup,
-    InlineKeyboardButton, CallbackQuery
-)
-from info import (
-    UPI_ID, UPI_NAME, START_MESSAGE, 
-    RULES_TEXT, SUPPORT_TEXT, PROFILE_TEXT
-)
-from database import get_balance, get_user, get_user_orders
+from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from info import START_MESSAGE, RULES_TEXT, SUPPORT_TEXT, PROFILE_TEXT, HELP_TEXT, USER_HELP, ADMIN_HELP
+from database import get_balance, get_user, get_user_orders, get_config, is_admin
 
-# Tracks users mid-flow for deposits
 user_states = {}
 
 async def start(client: Client, message: Message):
-    # Determine if it's a message or callback
-    is_callback = isinstance(message, CallbackQuery)
-    target = message.message if is_callback else message
-    name = message.from_user.first_name if is_callback else message.from_user.first_name
+    is_cb = isinstance(message, CallbackQuery)
+    target = message.message if is_cb else message
+    user_id = message.from_user.id
 
-    text = START_MESSAGE.format(name=name)
+    # Check FSub
+    from handlers.fsub import check_fsub
+    if not await check_fsub(client, target if not is_cb else message):
+        return
+
+    text = START_MESSAGE.format(name=message.from_user.first_name)
     markup = InlineKeyboardMarkup([
         [InlineKeyboardButton("🛒 Shop", callback_data="open_shop"), InlineKeyboardButton("💵 Deposit", callback_data="open_deposit")],
         [InlineKeyboardButton("👤 Profile", callback_data="open_profile"), InlineKeyboardButton("📦 Orders", callback_data="open_orders")],
-        [InlineKeyboardButton("🛟 Support", callback_data="open_support"), InlineKeyboardButton("📋 Rules", callback_data="open_rules")]
+        [InlineKeyboardButton("🛟 Support", callback_data="open_support"), InlineKeyboardButton("📋 Rules", callback_data="open_rules")],
+        [InlineKeyboardButton("📖 Help", callback_data="open_help")]
     ])
 
-    if is_callback:
-        await target.edit_text(text, reply_markup=markup)
-    else:
-        await target.reply_text(text, reply_markup=markup)
+    if is_cb: await target.edit_text(text, reply_markup=markup)
+    else: await target.reply_text(text, reply_markup=markup)
+
+async def help_menu(client: Client, callback: CallbackQuery):
+    markup = InlineKeyboardMarkup([
+        [InlineKeyboardButton("👤 User Commands", callback_data="help_user")],
+        [InlineKeyboardButton("🔐 Admin Commands", callback_data="help_admin")],
+        [InlineKeyboardButton("🔙 Back", callback_data="back_to_main")]
+    ])
+    await callback.message.edit_text(HELP_TEXT, reply_markup=markup)
+
+async def help_detail(client: Client, callback: CallbackQuery):
+    is_admin_help = callback.data == "help_admin"
+    if is_admin_help and not is_admin(callback.from_user.id):
+        await callback.answer("❌ Admin only!", show_alert=True)
+        return
+    
+    text = ADMIN_HELP if is_admin_help else USER_HELP
+    markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="open_help")]])
+    await callback.message.edit_text(text, reply_markup=markup)
 
 async def profile_menu(client: Client, callback: CallbackQuery):
-    user_id = callback.from_user.id
-    user = get_user(user_id)
-    orders = get_user_orders(user_id)
-    
+    user = get_user(callback.from_user.id)
+    orders = get_user_orders(callback.from_user.id)
     text = PROFILE_TEXT.format(
         name=callback.from_user.first_name,
         balance=user.get("balance", 0),
         total_spent=user.get("total_spent", 0),
         total_purchases=len(orders)
     )
-    
-    markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton("💵 Deposit", callback_data="open_deposit")],
-        [InlineKeyboardButton("🔙 Back", callback_data="back_to_main")]
-    ])
+    markup = InlineKeyboardMarkup([[InlineKeyboardButton("💵 Deposit", callback_data="open_deposit")], [InlineKeyboardButton("🔙 Back", callback_data="back_to_main")]])
     await callback.message.edit_text(text, reply_markup=markup)
-
-async def orders_menu(client: Client, callback: CallbackQuery):
-    user_id = callback.from_user.id
-    orders = get_user_orders(user_id)
-    
-    if not orders:
-        text = "📦 **ORDERS**\n\n❌ NO PAST ORDERS FOUND!"
-        markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="back_to_main")]])
-    else:
-        text = "📦 **YOUR RECENT ORDERS**\n\nSelect an order to get OTP:"
-        buttons = []
-        # Show last 5 active orders
-        for ord in orders[:5]:
-            status = "✅" if ord["status"] == "active" else "🔒"
-            buttons.append([InlineKeyboardButton(f"{status} {ord['country']} - {ord['phone']}", callback_data=f"get_otp_{ord['order_id']}")])
-        
-        buttons.append([InlineKeyboardButton("🔙 Back", callback_data="back_to_main")])
-        markup = InlineKeyboardMarkup(buttons)
-
-    await callback.message.edit_text(text, reply_markup=markup)
-
-async def rules_menu(client: Client, callback: CallbackQuery):
-    markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="back_to_main")]])
-    await callback.message.edit_text(RULES_TEXT, reply_markup=markup)
-
-async def support_menu(client: Client, callback: CallbackQuery):
-    markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="back_to_main")]])
-    await callback.message.edit_text(SUPPORT_TEXT, reply_markup=markup)
 
 async def deposit_menu(client: Client, callback: CallbackQuery):
+    config = get_config()
     await callback.message.edit_text(
-        f"💳 **DEPOSIT FUNDS**\n\n"
-        f"Send payment to:\n"
-        f"🏦 UPI ID: `{UPI_ID}`\n"
-        f"👤 Name: {UPI_NAME}\n\n"
-        f"Enter the amount you want to add (e.g. `100`):",
+        f"💳 **DEPOSIT FUNDS**\n\nPay to:\n🏦 UPI ID: `{config['upi_id']}`\n👤 Name: {config['upi_name']}\n\n"
+        "Enter amount to add (e.g. 100):",
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="back_to_main")]])
     )
     user_states[callback.from_user.id] = {"step": "waiting_amount"}
 
 async def handle_message(client: Client, message: Message):
     user_id = message.from_user.id
-    state = user_states.get(user_id)
+    
+    # Check Admin Interactive States
+    from handlers.admin import admin_states, handle_admin_msg
+    if is_admin(user_id) and user_id in admin_states:
+        await handle_admin_msg(client, message)
+        return
 
+    state = user_states.get(user_id)
     if not state: return
 
-    step = state.get("step")
-
+    step = state["step"]
     if step == "waiting_amount":
         try:
             amount = float(message.text.strip())
             if amount <= 0: raise ValueError
-        except ValueError:
-            await message.reply_text("❌ Invalid amount. Please enter a valid number.")
-            return
-
-        user_states[user_id] = {"step": "waiting_ss", "amount": amount}
-        await message.reply_text(
-            f"✅ Amount: ₹{amount}\n\n"
-            f"📲 Pay ₹{amount} to UPI: `{UPI_ID}`\n\n"
-            f"After paying, send the **screenshot** of payment 👇",
-        )
+            user_states[user_id] = {"step": "waiting_ss", "amount": amount}
+            await message.reply_text(f"✅ Amount: ₹{amount}\n\nSend payment screenshot 👇")
+        except: await message.reply_text("❌ Invalid amount.")
 
     elif step == "waiting_ss":
         if not message.photo:
-            await message.reply_text("📸 Please send a **photo/screenshot** of your payment.")
+            await message.reply_text("📸 Send screenshot photo.")
             return
-
-        ss_file_id = message.photo.file_id
-        user_states[user_id] = {"step": "waiting_utr", "amount": state["amount"], "ss_file_id": ss_file_id}
-        await message.reply_text("✅ Screenshot received!\n\nNow send your **UTR / Transaction ID** 👇")
+        user_states[user_id].update({"step": "waiting_utr", "ss": message.photo.file_id})
+        await message.reply_text("✅ Send UTR / Transaction ID 👇")
 
     elif step == "waiting_utr":
-        from database import add_transaction, utr_exists
-        from info import LOG_GROUP
+        from database import add_transaction, utr_exists, get_config
         utr = message.text.strip()
-
-        if len(utr) < 6:
-            await message.reply_text("❌ Invalid UTR.")
+        if len(utr) < 6 or utr_exists(utr):
+            await message.reply_text("❌ Invalid or duplicate UTR.")
             return
-
-        if utr_exists(utr):
-            await message.reply_text("⚠️ Already submitted.")
-            user_states.pop(user_id, None)
-            return
-
-        amount, ss_file_id = state["amount"], state["ss_file_id"]
-        add_transaction(user_id, utr, amount, ss_file_id)
-
-        # Log to Admin
-        caption = f"💰 **Payment Request**\n👤 User: {message.from_user.first_name}\n🆔 ID: `{user_id}`\n💵 Amount: ₹{amount}\n🔖 UTR: `{utr}`"
-        await client.send_photo(
-            chat_id=LOG_GROUP,
-            photo=ss_file_id,
-            caption=caption,
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("✅ Approve", callback_data=f"approve_{utr}_{user_id}_{amount}"),
-                 InlineKeyboardButton("❌ Reject", callback_data=f"reject_{utr}_{user_id}")]
-            ])
-        )
-
-        await message.reply_text("✅ **Payment submitted!** Admin will verify shortly.")
+        
+        amount, ss = state["amount"], state["ss"]
+        add_transaction(user_id, utr, amount, ss)
+        config = get_config()
+        
+        # Notify Admins (Primary admin and others)
+        caption = f"💰 **New Payment**\n👤 {message.from_user.first_name} ({user_id})\n💵 ₹{amount}\n🔖 UTR: `{utr}`"
+        for admin in config["admins"]:
+            try:
+                await client.send_photo(admin, ss, caption=caption, reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("✅ Approve", callback_data=f"approve_{utr}_{user_id}_{amount}"),
+                     InlineKeyboardButton("❌ Reject", callback_data=f"reject_{utr}_{user_id}")]
+                ]))
+            except: pass
+        await message.reply_text("✅ Submitted for verification!")
         user_states.pop(user_id, None)
+
+async def orders_menu(client: Client, callback: CallbackQuery):
+    orders = get_user_orders(callback.from_user.id)
+    if not orders:
+        await callback.message.edit_text("📦 **ORDERS**\n\n❌ NO PAST ORDERS FOUND!", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="back_to_main")]]))
+    else:
+        buttons = []
+        for ord in orders[:8]:
+            status = "✅" if ord["status"] == "active" else "🔒"
+            buttons.append([InlineKeyboardButton(f"{status} {ord['country']} - {ord['phone']}", callback_data=f"get_otp_{ord['order_id']}")])
+        buttons.append([InlineKeyboardButton("🔙 Back", callback_data="back_to_main")])
+        await callback.message.edit_text("📦 **YOUR ORDERS**", reply_markup=InlineKeyboardMarkup(buttons))

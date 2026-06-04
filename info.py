@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ============================================
-#           FILL ALL DETAILS IN .env
+#           FALLBACK CONFIGURATIONS
 # ============================================
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "YOUR_BOT_TOKEN")
@@ -12,21 +12,9 @@ API_ID = int(os.environ.get("API_ID", 123456))
 API_HASH = os.environ.get("API_HASH", "YOUR_API_HASH")
 ADMIN_ID = int(os.environ.get("ADMIN_ID", 123456789))
 LOG_GROUP = int(os.environ.get("LOG_GROUP", -100123456789))
-UPI_ID = os.environ.get("UPI_ID", "yourname@upi")
-UPI_NAME = os.environ.get("UPI_NAME", "Your Name")
 MONGO_URL = os.environ.get("MONGO_URL", "mongodb+srv://user:pass@cluster.mongodb.net/")
-BOT_USERNAME = os.environ.get("BOT_USERNAME", "YourBotUsername")
-SUPPORT_CHAT = os.environ.get("SUPPORT_CHAT", "@helpdesk_nrbot")
 
-# Pricing per country (Example)
-COUNTRY_PRICES = {
-    "🇮🇳 India": 15.0,
-    "🇺🇸 USA": 20.0,
-    "🇷🇺 Russia": 12.0,
-    "🇬🇧 UK": 25.0
-}
-
-# UI TEXTS
+# UI TEXTS (Static Templates)
 START_MESSAGE = """
 🔥 Welcome to Hind Deals!
 
@@ -57,20 +45,6 @@ RULES_TEXT = """
    • All refund decisions are final and at the sole discretion of the Hind Deals Team.
 """
 
-SUPPORT_TEXT = f"""
-🛟 SUPPORT CENTER
-
-Facing any issue?  
-Contact our support team here 👉 {SUPPORT_CHAT}
-
-⚠️ Important Guidelines:
-• Avoid spamming the chat  
-• Explain your issue clearly  
-• Attach a proper screenshot  
-
-📌 Following these steps ensures a faster response.
-"""
-
 PROFILE_TEXT = """
 👤 **USER PROFILE**
 
@@ -80,4 +54,36 @@ PROFILE_TEXT = """
 • 🛒 Total Purchases: {total_purchases}
 
 💡 Need more funds? Use the '💵 Deposit' button below to top up your balance.
+"""
+
+HELP_TEXT = """
+📖 **HELP CENTER**
+
+Select the category you need help with:
+"""
+
+USER_HELP = """
+👤 **USER COMMANDS**
+
+• /start - Start the bot & Main menu
+• /profile - View your account details
+• /shop - Buy Telegram accounts
+• /orders - View your active accounts & OTPs
+• /deposit - Add funds to your wallet
+• /rules - Read our guidelines
+• /help - Show this menu
+"""
+
+ADMIN_HELP = """
+🔐 **ADMIN COMMANDS**
+
+• /stats - Bot statistics
+• /addbal <id> <amt> - Manual credit
+• /broadcast <msg> - Send to all users
+• /addadmin <id> - Add new admin
+• /rmadmin <id> - Remove an admin
+• /setfsub <channel_id/link> - Set FSub
+• /setupi <id> <name> - Set payment UPI
+• /addacc - Add account to shop (interactive)
+• /login - Link admin session (interactive)
 """
