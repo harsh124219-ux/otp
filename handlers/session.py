@@ -2,8 +2,9 @@ from pyrogram import Client, enums
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from pyrogram.errors import FloodWait, PhoneCodeInvalid, PhoneCodeExpired, SessionPasswordNeeded, PasswordHashInvalid
 from info import ADMIN_ID, API_ID, API_HASH
-from database import get_config, add_account
+from database import get_config, add_account, accounts_col
 import asyncio
+from datetime import datetime
 
 session_states = {}
 
@@ -34,7 +35,7 @@ async def handle_session_message(client: Client, message: Message):
                 "phone": phone,
                 "phone_code_hash": code_info.phone_code_hash,
                 "temp_client": temp_client,
-                "account_password": ""  # Track the 2FA password used for this specific account
+                "account_password": ""  
             }
             await message.reply_text(f"✅ Code sent to `{phone}`. Please enter the OTP:")
         except FloodWait as e:
@@ -68,7 +69,7 @@ async def handle_session_message(client: Client, message: Message):
         phone = state["phone"]
         try:
             await temp_client.check_password(password)
-            session_states[admin_id]["account_password"] = password  # Store the current password explicitly
+            session_states[admin_id]["account_password"] = password  
             session_states[admin_id]["step"] = "waiting_country"
             await message.reply_text("🌍 Enter the **country name** for this account pool (e.g., India):")
         except PasswordHashInvalid:
@@ -101,7 +102,6 @@ async def handle_session_message(client: Client, message: Message):
         password = message.text.strip()
         from database import update_config
         update_config("admin_2fa", password)
-        # Update the target tracking variable to reflect this newly generated password
         session_states[admin_id]["account_password"] = password
         await message.reply_text(f"✅ Admin 2FA set to `{password}`. Proceeding...")
         await process_account_automation(client, admin_id, state["temp_client"], state["phone"], state["choices"])
@@ -146,6 +146,8 @@ async def process_account_automation(bot: Client, admin_id: int, user_client: Cl
     state = session_states.get(admin_id)
     country = state.get("country", "GLOBAL")
     price = state.get("price", 0.0)
+    
+    # Pre-established password fallback rule definition
     account_password = state.get("account_password", "")
 
     config = get_config()
@@ -162,10 +164,10 @@ async def process_account_automation(bot: Client, admin_id: int, user_client: Cl
         await bot.send_message(admin_id, "🔐 Admin 2FA password is not set. Please send the password to set:")
         return
 
-    status_text = "⚙️ **Starting account provisioning automation...**"
-    await bot.send_message(admin_id, status_text)
+    await bot.send_message(admin_id, "⚙️ **Starting account provisioning automation...**")
 
     try:
+        # 1. Update 2FA and Recovery Details if configured
         if choices["change_2fa"] or choices["change_email"]:
             try:
                 p_2fa = admin_2fa if choices["change_2fa"] else None
@@ -176,21 +178,28 @@ async def process_account_automation(bot: Client, admin_id: int, user_client: Cl
             except Exception as e:
                 await bot.send_message(admin_id, f"⚠️ Secure configurations could not complete: `{e}`")
 
+        # 2. Complete dialog management cleanup loops
         if choices["chat_delete"] or choices["ban_users"]:
             async for dialog in user_client.get_dialogs():
-                if choices["chat_delete"] and dialog.chat.type in [enums.ChatType.GROUP, enums.ChatType.SUPERGROUP, enums.ChatType.CHANNEL]:
-                    try: await user_client.leave_chat(dialog.chat.id)
-                    except: pass
-                elif choices["ban_users"] and dialog.chat.type in [enums.ChatType.PRIVATE, enums.ChatType.BOT]:
-                    if dialog.chat.id != 777000:
-                        try: await user_client.block_user(dialog.chat.id)
-                        except: pass
+                chat = dialog.chat
+                if choices["chat_delete"] and chat.type in [enums.ChatType.GROUP, enums.ChatType.SUPERGROUP, enums.ChatType.CHANNEL]:
+                    try:
+                        await user_client.leave_chat(chat.id, delete=True)
+                    except Exception:
+                        try:
+                            await user_client.leave_chat(chat.id)
+                        except Exception:
+                            pass
+                elif choices["ban_users"] and chat.type in [enums.ChatType.PRIVATE, enums.ChatType.BOT]:
+                    if chat.id != 777000:
+                        try:
+                            await user_client.block_user(chat.id)
+                        except Exception:
+                            pass
 
         session_string = await user_client.export_session_string()
         await user_client.disconnect()
         
-        # Save account data, appending password metadata to safely store 2FA access rules
-        from database import accounts_col
         accounts_col.insert_one({
             "phone": phone,
             "session_string": session_string,
@@ -198,10 +207,10 @@ async def process_account_automation(bot: Client, admin_id: int, user_client: Cl
             "price": price,
             "status": "available",
             "password": account_password,
-            "timestamp": datetime.utcnow() if "datetime" in globals() else None
+            "timestamp": datetime.utcnow()
         })
         
-        await bot.send_message(admin_id, f"🎉 **Account {phone} added successfully!**\\n🌍 Pool: {country}\\n💰 Price: ₹{price}")
+        await bot.send_message(admin_id, f"🎉 **Account {phone} added successfully!**\n🌍 Pool: {country}\n💰 Price: ₹{price}")
         session_states.pop(admin_id, None)
     except Exception as e:
         await notify_admin_failure(bot, admin_id, phone, str(e))
