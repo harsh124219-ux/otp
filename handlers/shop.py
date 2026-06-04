@@ -7,26 +7,52 @@ from database import (
 from info import API_ID, API_HASH, LOG_GROUP
 from datetime import datetime, timedelta
 
+
+# ─────────────────────────────────────────────────────────────
+#  Helpers
+# ─────────────────────────────────────────────────────────────
+
 def mask_number(phone: str) -> str:
-    """Masks the phone number exactly after the first 3 initial digits."""
+    """Masks the phone number after the first 4 characters (e.g. +91*******0)."""
     if not phone:
         return ""
-    clean_phone = phone.strip()
-    if len(clean_phone) <= 4:
-        return clean_phone
-    return clean_phone[:4] + "*" * (len(clean_phone) - 4)
+    clean = phone.strip()
+    if len(clean) <= 4:
+        return clean
+    return clean[:4] + "*" * (len(clean) - 4)
 
-async def shop_menu(client: Client, message: Message):
-    if isinstance(message, CallbackQuery):
-        message = message.message
+
+async def _edit(callback: CallbackQuery, text: str, markup: InlineKeyboardMarkup):
+    """
+    Safely edit the existing message.
+    Falls back to sending a new message only if the edit genuinely fails.
+    This is the ONLY way we update messages — no new messages ever sent on navigation.
+    """
+    try:
+        await callback.message.edit_text(text, reply_markup=markup)
+    except Exception:
+        await callback.message.reply_text(text, reply_markup=markup)
+
+
+# ─────────────────────────────────────────────────────────────
+#  Shop Menu
+# ─────────────────────────────────────────────────────────────
+
+async def shop_menu(client: Client, update):
+    """
+    Works with both Message (from /shop command) and CallbackQuery (from button click).
+    Always EDITS on callback, always REPLIES on direct message.
+    """
+    is_cb = isinstance(update, CallbackQuery)
+    message = update.message if is_cb else update
 
     countries = accounts_col.distinct("country", {"status": "available"})
 
     if not countries:
-        text = "🛒 **SHOP**\n\n❌ No accounts available at the moment."
+        text = "🛒 **SHOP**\n\n❌ No accounts available at the moment.\nCheck back soon!"
         markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="back_to_main")]])
-        if hasattr(message, "edit_text") and message.from_user.id == client.me.id:
-            await message.edit_text(text, reply_markup=markup)
+        if is_cb:
+            await _edit(update, text, markup)
         else:
             await message.reply_text(text, reply_markup=markup)
         return
@@ -36,192 +62,266 @@ async def shop_menu(client: Client, message: Message):
         count = accounts_col.count_documents({"status": "available", "country": country})
         if count > 0:
             buttons.append([
-                InlineKeyboardButton(f"🌍 {country} ({count} available)", callback_data=f"sort_opts_{country}")
+                InlineKeyboardButton(
+                    f"🌍 {country}  ({count} available)",
+                    callback_data=f"sort_opts_{country}"
+                )
             ])
 
     buttons.append([InlineKeyboardButton("🔙 Back", callback_data="back_to_main")])
-    
-    text = "🛒 **SHOP**\n\nSelect a country to view stock:"
+    text = "🛒 **SHOP**\n\nSelect a country to view available accounts:"
     markup = InlineKeyboardMarkup(buttons)
-    
-    if hasattr(message, "edit_text") and message.from_user.id == client.me.id:
-        await message.edit_text(text, reply_markup=markup)
+
+    if is_cb:
+        await _edit(update, text, markup)
     else:
         await message.reply_text(text, reply_markup=markup)
+
+
+# ─────────────────────────────────────────────────────────────
+#  Sort Options
+# ─────────────────────────────────────────────────────────────
 
 async def sort_options_menu(client: Client, callback: CallbackQuery):
     country = callback.data.replace("sort_opts_", "")
     buttons = [
-        [InlineKeyboardButton("📉 Cheapest to Expensive", callback_data=f"view_country_{country}_low")],
-        [InlineKeyboardButton("📈 Expensive to Cheapest", callback_data=f"view_country_{country}_high")],
+        [InlineKeyboardButton("📉 Cheapest First", callback_data=f"view_country_{country}_low")],
+        [InlineKeyboardButton("📈 Most Expensive First", callback_data=f"view_country_{country}_high")],
         [InlineKeyboardButton("🔙 Back to Shop", callback_data="open_shop")]
     ]
-    await callback.message.edit_text(
-        f"📊 **Sorting Preference for {country}**\n\nHow would you like to view the price list?",
-        reply_markup=InlineKeyboardMarkup(buttons)
+    await _edit(
+        callback,
+        f"📊 **Sort Preference — {country}**\n\nHow would you like to sort the price list?",
+        InlineKeyboardMarkup(buttons)
     )
+
+
+# ─────────────────────────────────────────────────────────────
+#  Country Account List
+# ─────────────────────────────────────────────────────────────
 
 async def view_country_accounts(client: Client, callback: CallbackQuery):
     parts = callback.data.split("_")
-    country = parts[2]
-    sort_type = parts[3] if len(parts) > 3 else "low"
-    sort_order = "low_to_high" if sort_type == "low" else "high_to_low"
+    # Format: view_country_{COUNTRY}_{low|high}
+    # country can have underscores — join middle parts
+    sort_type = parts[-1]                        # last element
+    country   = "_".join(parts[2:-1])           # everything between "country_" and sort_type
 
-    # Fetch accounts from database sorted by price criteria
+    sort_order = "low_to_high" if sort_type == "low" else "high_to_low"
     accounts = get_accounts_by_country_sorted(country, sort_order)
-    
-    # Filter to guarantee only currently available stock items are viewed
-    available_accounts = [acc for acc in accounts if acc.get("status") == "available"]
+    available_accounts = [a for a in accounts if a.get("status") == "available"]
 
     if not available_accounts:
         await callback.answer("❌ Out of stock in this category.", show_alert=True)
+        # Go back to shop automatically
+        await shop_menu(client, callback)
         return
 
-    text = f"🌍 **Country Pool:** {country.upper()}\n\n✨ **Select an account to purchase:**"
-    
+    text = (
+        f"🌍 **{country.upper()} — Available Accounts**\n\n"
+        f"💡 Tap any account to purchase it.\n"
+        f"_Showing {len(available_accounts)} item(s)_"
+    )
+
     buttons = []
     for acc in available_accounts:
-        phone = acc["phone"]
-        price = acc["price"]
-        masked_no = mask_number(phone)
-        
-        # Exact requested format -> price : masked no after 3 initial digits
-        btn_label = f"₹{price} : {masked_no}"
-        buttons.append([InlineKeyboardButton(btn_label, callback_data=f"buy_acc_{phone}")])
+        phone  = acc["phone"]
+        price  = acc["price"]
+        masked = mask_number(phone)
+        buttons.append([
+            InlineKeyboardButton(f"₹{price}  —  {masked}", callback_data=f"buy_acc_{phone}")
+        ])
 
     buttons.append([InlineKeyboardButton("🔙 Back", callback_data=f"sort_opts_{country}")])
-    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+    await _edit(callback, text, InlineKeyboardMarkup(buttons))
+
+
+# ─────────────────────────────────────────────────────────────
+#  Buy Account
+# ─────────────────────────────────────────────────────────────
 
 async def buy_account(client: Client, callback: CallbackQuery):
-    phone = callback.data.replace("buy_acc_", "")
+    phone   = callback.data.replace("buy_acc_", "")
     user_id = callback.from_user.id
 
-    # VERIFY AVAILABILITY INSTANTLY BEFORE COLLECTION
+    # 1. Verify availability BEFORE touching balance
     account = accounts_col.find_one({"phone": phone, "status": "available"})
     if not account:
-        await callback.answer("❌ This account was just sold to another user!", show_alert=True)
-        # Re-render menu dynamically
+        await callback.answer("❌ This account was just sold to someone else!", show_alert=True)
         await shop_menu(client, callback)
         return
 
     price = account["price"]
     if get_balance(user_id) < price:
-        await callback.answer(f"❌ Insufficient balance! Needs ₹{price}", show_alert=True)
+        await callback.answer(f"❌ Insufficient balance! You need ₹{price}", show_alert=True)
         return
 
+    # 2. Deduct balance
     if not deduct_balance(user_id, price):
-        await callback.answer("❌ Error processing payment.", show_alert=True)
+        await callback.answer("❌ Payment error. Please try again.", show_alert=True)
         return
 
-    # Atomic update lock to secure transaction
-    result = accounts_col.update_one({"phone": phone, "status": "available"}, {"$set": {"status": "sold"}})
+    # 3. Atomic status lock — prevents double-sell
+    result = accounts_col.update_one(
+        {"phone": phone, "status": "available"},
+        {"$set": {"status": "sold"}}
+    )
     if result.modified_count == 0:
-        # Refund user balance if state changes during computation gap
+        # Race condition — refund and notify
         from database import add_balance
         add_balance(user_id, price)
-        await callback.answer("❌ This item was bought by someone else a second ago!", show_alert=True)
+        await callback.answer("❌ Someone bought this a split second before you! Refunded.", show_alert=True)
+        await shop_menu(client, callback)
         return
 
-    order_id = create_order(user_id, phone, account["session_string"], account["country"], price)
+    # 4. Create order record
+    order_id = create_order(
+        user_id, phone,
+        account["session_string"],
+        account["country"],
+        price
+    )
 
-    # SEND REAL-TIME NOTIFICATION LOG IMMEDIATELY
+    # 5. Log to admin group
     log_text = (
-        f"🛒 🛍️ **NEW COMPLETED SALE DONE**\n\n"
-        f"👤 **Buyer ID:** `{user_id}`\n"
-        f"📱 **Phone Number:** `{phone}`\n"
-        f"🌍 **Country Pool:** {account['country']}\n"
-        f"💰 **Final Price Paid:** ₹{price}\n"
-        f"📅 **Date:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        f"🛒 **NEW SALE**\n\n"
+        f"👤 Buyer: `{user_id}`\n"
+        f"📱 Phone: `{phone}`\n"
+        f"🌍 Country: {account['country']}\n"
+        f"💰 Price: ₹{price}\n"
+        f"🆔 Order: `{order_id}`\n"
+        f"📅 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
     )
     try:
         await client.send_message(chat_id=LOG_GROUP, text=log_text)
     except Exception as e:
-        print(f"Failed sending purchase log to LOG_GROUP: {e}")
+        print(f"[LOG] Failed to send purchase log: {e}")
 
-    await callback.message.edit_text(
-        f"🎉 **Purchase Successful!**\n\n📱 Number: `{phone}`\n💰 Cost: ₹{price}\n\n"
-        f"Go to **My Orders** section to request your code updates.",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📦 Open Orders Menu", callback_data="open_orders")]])
+    # 6. Confirm to user (edit in place)
+    await _edit(
+        callback,
+        f"🎉 **Purchase Successful!**\n\n"
+        f"📱 Number: `{phone}`\n"
+        f"💰 Paid: ₹{price}\n"
+        f"🆔 Order ID: `{order_id}`\n\n"
+        f"Use **My Orders** to fetch OTP codes.",
+        InlineKeyboardMarkup([
+            [InlineKeyboardButton("📦 My Orders", callback_data="open_orders")],
+            [InlineKeyboardButton("🛒 Buy Another", callback_data="open_shop")]
+        ])
     )
+
+
+# ─────────────────────────────────────────────────────────────
+#  OTP Fetch
+# ─────────────────────────────────────────────────────────────
 
 async def get_otp_logic(client: Client, callback: CallbackQuery):
     order_id = callback.data.replace("get_otp_", "")
     order = get_order(order_id)
 
     if not order:
-        await callback.answer("Order details invalid.", show_alert=True)
+        await callback.answer("❌ Order not found.", show_alert=True)
         return
 
-    await callback.answer("⏳ Fetching code logs directly from Telegram...", show_alert=False)
+    await callback.answer("⏳ Connecting to Telegram session...", show_alert=False)
 
     try:
-        user_client = Client(f"s_{order['phone']}", API_ID, API_HASH, session_string=order["session_string"], in_memory=True)
+        user_client = Client(
+            f"s_{order['phone']}",
+            API_ID, API_HASH,
+            session_string=order["session_string"],
+            in_memory=True
+        )
         await user_client.connect()
 
-        otp_msg = "❌ No fresh login codes discovered. Please trigger an official registration request from your app."
+        otp_msg = None
         two_minutes_ago = datetime.utcnow() - timedelta(minutes=2)
 
         async for m in user_client.get_chat_history(777000, limit=5):
-            if m.date and m.date >= two_minutes_ago:
-                if m.text:
-                    otp_msg = m.text
-                    break
+            if m.date and m.date >= two_minutes_ago and m.text:
+                otp_msg = m.text
+                break
 
         await user_client.disconnect()
-        
-        await callback.message.reply_text(
-            f"📩 **OTP FOR** `{order['phone']}` (Last 2m):\n\n`{otp_msg}`",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔄 Refresh New OTP", callback_data=f"get_otp_{order_id}")],
-                [InlineKeyboardButton("🚪 Logout & Close Session", callback_data=f"logout_acc_{order_id}")]
-            ])
-        )
 
-        account_data = accounts_col.find_one({"phone": order['phone']})
-        two_fa_password = account_data.get("password") if account_data else None
-
-        if two_fa_password:
-            await client.send_message(
-                chat_id=callback.from_user.id,
-                text=f"🔐 **2FA Password for** `{order['phone']}`:\n\n`{two_fa_password}`"
+        if otp_msg:
+            result_text = (
+                f"📩 **OTP for** `{order['phone']}`\n"
+                f"_(last 2 minutes)_\n\n"
+                f"`{otp_msg}`"
             )
         else:
+            result_text = (
+                f"📩 **OTP for** `{order['phone']}`\n\n"
+                f"❌ No fresh OTP found in the last 2 minutes.\n\n"
+                f"👉 Trigger a login request from your app, then refresh."
+            )
+
+        markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔄 Refresh OTP", callback_data=f"get_otp_{order_id}")],
+            [InlineKeyboardButton("🚪 Close Session", callback_data=f"logout_acc_{order_id}")],
+            [InlineKeyboardButton("🔙 Back to Orders", callback_data="open_orders")]
+        ])
+
+        # Send OTP as new message (intentional — user needs to see it clearly, not lose it on next edit)
+        await callback.message.reply_text(result_text, reply_markup=markup)
+
+        # Send 2FA password separately (private, sensitive)
+        account_data = accounts_col.find_one({"phone": order["phone"]})
+        two_fa = account_data.get("password") if account_data else None
+        recovery_email = account_data.get("recovery_email") if account_data else None
+
+        if two_fa:
+            info_lines = [f"🔐 **2FA Password:** `{two_fa}`"]
+            if recovery_email:
+                info_lines.append(f"📧 **Recovery Email:** `{recovery_email}`")
             await client.send_message(
-                chat_id=callback.from_user.id,
-                text=f"ℹ️ **2FA Status for** `{order['phone']}`:\nNo password is set or required for this account."
+                callback.from_user.id,
+                "\n".join(info_lines)
             )
 
     except Exception as e:
-        await callback.message.reply_text(f"❌ Error communicating with Telegram session: `{e}`")
+        await callback.message.reply_text(f"❌ Session error: `{e}`")
+
+
+# ─────────────────────────────────────────────────────────────
+#  Logout / Close Session
+# ─────────────────────────────────────────────────────────────
 
 async def logout_acc_logic(client: Client, callback: CallbackQuery):
     order_id = callback.data.replace("logout_acc_", "")
     order = get_order(order_id)
 
     if not order:
-        await callback.answer("Active session record missing.", show_alert=True)
+        await callback.answer("❌ Order record not found.", show_alert=True)
         return
 
     try:
-        # Fixed: We close the active order cleanly without destroying the Pyrogram server auth key.
         close_order(order_id)
 
-        # SEND DISCONNECT NOTIFICATION LOG IMMEDIATELY
         log_text = (
-            f"🚪 **USER LOGGED OUT FROM ACCOUNT**\n\n"
-            f"👤 **User ID:** `{order['user_id']}`\n"
-            f"📱 **Phone Number:** `{order['phone']}`\n"
-            f"🌍 **Country Pool:** {order['country']}\n"
-            f"📅 **Date:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            f"🚪 **SESSION CLOSED**\n\n"
+            f"👤 User: `{order['user_id']}`\n"
+            f"📱 Phone: `{order['phone']}`\n"
+            f"🌍 Country: {order['country']}\n"
+            f"📅 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         )
         try:
             await client.send_message(chat_id=LOG_GROUP, text=log_text)
         except Exception as e:
-            print(f"Failed sending logout log to LOG_GROUP: {e}")
+            print(f"[LOG] Failed to send logout log: {e}")
 
-        await callback.message.edit_text(
-            f"✅ Successfully closed session interface for account `{order['phone']}`. Order session is now finalized.",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back_to_main")]])
+        await _edit(
+            callback,
+            f"✅ Session for `{order['phone']}` has been closed.\n\n"
+            f"The order is now marked as complete.",
+            InlineKeyboardMarkup([
+                [InlineKeyboardButton("📦 My Orders", callback_data="open_orders")],
+                [InlineKeyboardButton("🏠 Main Menu", callback_data="back_to_main")]
+            ])
         )
+
     except Exception as e:
-        await callback.message.edit_text(f"❌ Session closure issue: `{e}`")
+        await _edit(callback, f"❌ Could not close session: `{e}`",
+                    InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="open_orders")]]))
