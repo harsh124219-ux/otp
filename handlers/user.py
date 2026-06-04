@@ -1,21 +1,27 @@
-from pyrogram import Client, enums
+from pyrogram import Client
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
-from info import START_MESSAGE, RULES_TEXT, SUPPORT_TEXT, PROFILE_TEXT, HELP_TEXT, USER_HELP, ADMIN_HELP
-from database import get_balance, get_user, get_user_orders, get_config, is_admin
+from info import START_MESSAGE, PROFILE_TEXT, HELP_TEXT, USER_HELP, ADMIN_HELP
+from database import get_user, get_user_orders, get_config, is_admin
 
 user_states = {}
 
+async def edit_or_reply(callback: CallbackQuery, text: str, markup: InlineKeyboardMarkup):
+    """Safely edit the existing message or send a new one if it fails (e.g., if deleted)."""
+    try:
+        await callback.message.edit_text(text, reply_markup=markup)
+    except Exception:
+        await callback.message.reply(text, reply_markup=markup)
 
 async def start(client: Client, message):
     """Handles both Message and CallbackQuery."""
     is_cb = isinstance(message, CallbackQuery)
     target = message.message if is_cb else message
-
+    
     from handlers.fsub import check_fsub
     if not await check_fsub(client, target):
         return
 
-    text = START_MESSAGE.format(name=message.from_user.first_name)
+    text = START_MESSAGE.format(name=target.chat.first_name)
     markup = InlineKeyboardMarkup([
         [InlineKeyboardButton("🛒 Shop", callback_data="open_shop"),
          InlineKeyboardButton("💵 Deposit", callback_data="open_deposit")],
@@ -27,26 +33,21 @@ async def start(client: Client, message):
     ])
 
     if is_cb:
-        await target.edit_text(text, reply_markup=markup)
+        await edit_or_reply(message, text, markup)
     else:
         await target.reply_text(text, reply_markup=markup)
 
-
 async def help_menu(client: Client, message):
-    """Handles both Message and CallbackQuery."""
     is_cb = isinstance(message, CallbackQuery)
-    target = message.message if is_cb else message
-
     markup = InlineKeyboardMarkup([
         [InlineKeyboardButton("👤 User Commands", callback_data="help_user")],
         [InlineKeyboardButton("🔐 Admin Commands", callback_data="help_admin")],
         [InlineKeyboardButton("🔙 Back", callback_data="back_to_main")]
     ])
     if is_cb:
-        await target.edit_text(HELP_TEXT, reply_markup=markup)
+        await edit_or_reply(message, HELP_TEXT, markup)
     else:
-        await target.reply_text(HELP_TEXT, reply_markup=markup)
-
+        await message.reply_text(HELP_TEXT, reply_markup=markup)
 
 async def help_detail(client: Client, callback: CallbackQuery):
     is_admin_help = callback.data == "help_admin"
@@ -56,8 +57,7 @@ async def help_detail(client: Client, callback: CallbackQuery):
 
     text = ADMIN_HELP if is_admin_help else USER_HELP
     markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="open_help")]])
-    await callback.message.edit_text(text, reply_markup=markup)
-
+    await edit_or_reply(callback, text, markup)
 
 async def profile_menu(client: Client, callback: CallbackQuery):
     user = get_user(callback.from_user.id)
@@ -72,15 +72,13 @@ async def profile_menu(client: Client, callback: CallbackQuery):
         [InlineKeyboardButton("💵 Deposit", callback_data="open_deposit")],
         [InlineKeyboardButton("🔙 Back", callback_data="back_to_main")]
     ])
-    await callback.message.edit_text(text, reply_markup=markup)
-
+    await edit_or_reply(callback, text, markup)
 
 async def deposit_menu(client: Client, callback: CallbackQuery):
     config = get_config()
     upi_id = config.get("upi_id", "Not Set")
     upi_image = config.get("upi_image_file_id")
 
-    # Text includes instructions
     text = (
         f"💳 **DEPOSIT FUNDS**\n\n"
         f"Pay via UPI to:\n"
@@ -88,59 +86,40 @@ async def deposit_menu(client: Client, callback: CallbackQuery):
         f"After payment, please send the transaction screenshot.\n"
         f"Enter the amount to proceed."
     )
+    markup = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_deposit")]])
 
-    # Keyboard with Cancel button
-    markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton("❌ Cancel", callback_data="cancel_deposit")]
-    ])
-
-    # 1. Send the new deposit message (photo or text)
     if upi_image:
         try:
-            await callback.message.reply_photo(
-                photo=upi_image,
-                caption=text,
-                reply_markup=markup
-            )
+            await callback.message.reply_photo(photo=upi_image, caption=text, reply_markup=markup)
         except Exception:
             await callback.message.reply(text, reply_markup=markup)
     else:
         await callback.message.reply(text, reply_markup=markup)
 
-    # 2. Delete the old menu message
     try:
         await callback.message.delete()
     except Exception:
         pass
-
-    # 3. Set the user state
     user_states[callback.from_user.id] = {"step": "waiting_amount"}
     await callback.answer()
 
 async def handle_message(client: Client, message: Message):
     user_id = message.from_user.id
-
-    # Check Admin Interactive States first
     from handlers.admin import admin_states, handle_admin_msg
     if is_admin(user_id) and user_id in admin_states:
         await handle_admin_msg(client, message)
         return
 
     state = user_states.get(user_id)
-    if not state:
-        return
+    if not state: return
 
     step = state["step"]
-
     if step == "waiting_amount":
         try:
             amount = float(message.text.strip())
-            if amount <= 0:
-                raise ValueError
+            if amount <= 0: raise ValueError
             user_states[user_id] = {"step": "waiting_ss", "amount": amount}
-            await message.reply_text(
-                f"✅ Amount: ₹{amount}\n\n📸 Now send your **payment screenshot** 👇"
-            )
+            await message.reply_text(f"✅ Amount: ₹{amount}\n\n📸 Now send your **payment screenshot** 👇")
         except ValueError:
             await message.reply_text("❌ Invalid amount. Please enter a positive number (e.g., 100).")
 
@@ -152,73 +131,41 @@ async def handle_message(client: Client, message: Message):
         await message.reply_text("✅ Screenshot received!\n\n🔖 Now send your **UTR / Transaction ID** 👇")
 
     elif step == "waiting_utr":
-        from database import add_transaction, utr_exists, get_config
+        from database import add_transaction, utr_exists
         utr = message.text.strip()
-
-        # Validate that UTR consists only of digits and falls within length rules (12 to 22 digits)
         if not utr.isdigit() or not (12 <= len(utr) <= 22):
-            await message.reply_text(
-                "⚠️ **Invalid UTR Format!**\n\n"
-                "Your transaction UTR code must contain only numbers and be between **12 and 22 digits** long.\n\n"
-                "💡 **Example of a valid UTR:**\n"
-                "`202406041140` or `614207184925823`"
-            )
+            await message.reply_text("⚠️ **Invalid UTR Format!** Use 12-22 digits.")
             return
-
         if utr_exists(utr):
-            await message.reply_text("❌ This UTR has already been submitted. Contact admin if this is an error.")
+            await message.reply_text("❌ This UTR has already been submitted.")
             return
 
-        amount = state["amount"]
-        ss = state["ss"]
+        amount, ss = state["amount"], state["ss"]
         add_transaction(user_id, utr, amount, ss)
-        config = get_config()
-
-        caption = (
-            f"💰 **New Payment Request**\n\n"
-            f"👤 User: {message.from_user.first_name} (`{user_id}`)\n"
-            f"💵 Amount: ₹{amount}\n"
-            f"🔖 UTR: `{utr}`"
-        )
-        markup = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("✅ Approve", callback_data=f"approve_{utr}_{user_id}_{amount}"),
-                InlineKeyboardButton("❌ Reject", callback_data=f"reject_{utr}_{user_id}")
-            ]
-        ])
+        
+        caption = f"💰 **New Payment Request**\n\n👤 User: {message.from_user.first_name} (`{user_id}`)\n💵 Amount: ₹{amount}\n🔖 UTR: `{utr}`"
+        markup = InlineKeyboardMarkup([[
+            InlineKeyboardButton("✅ Approve", callback_data=f"approve_{utr}_{user_id}_{amount}"),
+            InlineKeyboardButton("❌ Reject", callback_data=f"reject_{utr}_{user_id}")
+        ]])
 
         from info import LOG_GROUP
-        # Route verification message layout to specified LOG_GROUP channel instead
         try:
             await client.send_photo(LOG_GROUP, ss, caption=caption, reply_markup=markup)
         except Exception as e:
-            print(f"Failed to route log verification message details to Log Group: {e}")
+            print(f"Log Error: {e}")
 
-        await message.reply_text(
-            "✅ **Payment submitted for verification!**\n\n"
-            "You'll be notified once an admin reviews it.\n"
-            "⏱️ Usually within a few minutes."
-        )
+        await message.reply_text("✅ **Payment submitted for verification!**")
         user_states.pop(user_id, None)
-
 
 async def orders_menu(client: Client, callback: CallbackQuery):
     orders = get_user_orders(callback.from_user.id)
+    markup_back = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="back_to_main")]])
+    
     if not orders:
-        await callback.message.edit_text(
-            "📦 **ORDERS**\n\n❌ You have no past orders.",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="back_to_main")]])
-        )
+        await edit_or_reply(callback, "📦 **ORDERS**\n\n❌ You have no past orders.", markup_back)
     else:
-        buttons = []
-        for ord in orders[:8]:
-            status = "✅" if ord["status"] == "active" else "🔒"
-            buttons.append([
-                InlineKeyboardButton(
-                    f"{status} {ord['country']} - {ord['phone']}",
-                    callback_data=f"get_otp_{ord['order_id']}"
-                )
-            ])
+        buttons = [[InlineKeyboardButton(f"{'✅' if o['status'] == 'active' else '🔒'} {o['country']} - {o['phone']}", 
+                    callback_data=f"get_otp_{o['order_id']}")] for o in orders[:8]]
         buttons.append([InlineKeyboardButton("🔙 Back", callback_data="back_to_main")])
-        await callback.message.edit_text("📦 **YOUR ORDERS**", reply_markup=InlineKeyboardMarkup(buttons))
-
+        await edit_or_reply(callback, "📦 **YOUR ORDERS**", InlineKeyboardMarkup(buttons))
