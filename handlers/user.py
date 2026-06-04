@@ -85,7 +85,6 @@ async def deposit_menu(client: Client, callback: CallbackQuery):
         f"💳 **DEPOSIT FUNDS**\n\n"
         f"Pay via UPI to:\n"
         f"🏦 **UPI ID:** `{upi_id}`\n"
-        f"👤 **Name:** {upi_name}\n\n"
         f"After payment, enter the amount below:"
     )
 
@@ -149,12 +148,19 @@ async def handle_message(client: Client, message: Message):
         from database import add_transaction, utr_exists, get_config
         utr = message.text.strip()
 
-        if len(utr) < 6:
-            await message.reply_text("❌ UTR too short. Please enter the correct Transaction ID.")
-            return
-        if utr_exists(utr):
-            await message.reply_text("❌ This UTR has already been submitted. Contact admin if this is an error.")
-            return
+# Validate that UTR consists only of digits and falls within length rules (12 to 22 digits)
+if not utr.isdigit() or not (12 <= len(utr) <= 22):
+    await message.reply_text(
+        "⚠️ **Invalid UTR Format!**\n\n"
+        "Your transaction UTR code must contain only numbers and be between **12 and 22 digits** long.\n\n"
+        "💡 **Example of a valid UTR:**\n"
+        "`202406041140` or `614207184925823`"
+        )
+    return
+
+if utr_exists(utr):
+    await message.reply_text("❌ This UTR has already been submitted. Contact admin if this is an error.")
+    return
 
         amount = state["amount"]
         ss = state["ss"]
