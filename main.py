@@ -5,9 +5,6 @@ from pyrogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineK
 from info import BOT_TOKEN, API_ID, API_HASH
 from database import is_admin
 
-# ── Import all handler modules with explicit error reporting ──
-# If ANY import fails, print exactly which one and exit so Heroku
-# shows the real error instead of silently running with no handlers.
 try:
     from handlers.user import (
         start, profile_menu, orders_menu,
@@ -55,21 +52,21 @@ except Exception as _e:
     sys.exit(1)
 
 try:
-    # Pre-check session.py so a bad import surfaces immediately at startup.
     import handlers.session as _session_check  # noqa: F401
     print("✅ handlers.session loaded")
 except Exception as _e:
     print(f"❌ FATAL: handlers.session failed to load: {_e}", file=sys.stderr)
     sys.exit(1)
 
-# Strip any accidental whitespace/newline from env-var token
 _clean_token = BOT_TOKEN.strip()
 
+# ── FIX BUG 7: in_memory=True prevents session file issues on Heroku ──
 app = Client(
     "otpbot",
     api_id=API_ID,
     api_hash=API_HASH,
-    bot_token=_clean_token
+    bot_token=_clean_token,
+    in_memory=True,          # ← FIX: no .session file written to ephemeral disk
 )
 
 
@@ -165,7 +162,12 @@ async def _run_fsub_check(client: Client, callback: CallbackQuery) -> bool:
 @app.on_callback_query()
 async def cb_h(client: Client, callback: CallbackQuery):
     data = callback.data
-    await callback.answer()
+
+    # ── FIX BUG 1: Do NOT call callback.answer() here for payment callbacks
+    # because payment_callback() calls it internally with show_alert=True.
+    # For all other callbacks, answer immediately to dismiss the loading spinner.
+    if not (data.startswith("approve_") or data.startswith("reject_")):
+        await callback.answer()
 
     try:
         if data == "check_fsub_again":
@@ -238,6 +240,7 @@ async def cb_h(client: Client, callback: CallbackQuery):
             await logout_acc_logic(client, callback)
 
         elif data.startswith("approve_") or data.startswith("reject_"):
+            # ── FIX BUG 1: payment_callback handles its own callback.answer()
             await payment_callback(client, callback)
 
         elif data.startswith("setup_"):
@@ -249,6 +252,10 @@ async def cb_h(client: Client, callback: CallbackQuery):
 
     except Exception as e:
         print(f"[CB ERROR] data={data!r}  error={e}")
+        try:
+            await callback.answer("❌ Something went wrong.", show_alert=True)
+        except Exception:
+            pass
         try:
             await start(client, callback)
         except Exception:
