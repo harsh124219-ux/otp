@@ -67,6 +67,7 @@ app = Client(
     api_id=API_ID,
     api_hash=API_HASH,
     bot_token=_clean_token,
+    in_memory=True,      # prevents stale .session file on Heroku ephemeral disk
 )
 
 
@@ -275,7 +276,9 @@ async def delete_webhook():
 async def main():
     await delete_webhook()
     await app.start()
-    print("✅ Bot is running...")
+    # Print bot identity so we can confirm the right token is connected
+    me = await app.get_me()
+    print(f"✅ Bot is running... @{me.username} (id={me.id})")
     await asyncio.Event().wait()
 
 
@@ -289,4 +292,3 @@ if __name__ == "__main__":
     finally:
         loop.run_until_complete(app.stop())
         loop.close()
-        
