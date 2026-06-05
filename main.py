@@ -88,7 +88,6 @@ app = Client(
     api_id=API_ID,
     api_hash=API_HASH,
     bot_token=_clean_token,
-    in_memory=True,
     max_concurrent_transmissions=3,
 )
 
