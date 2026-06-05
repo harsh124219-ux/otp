@@ -272,13 +272,21 @@ async def delete_webhook():
 #  manages the event loop and dispatcher lifecycle.
 # ─────────────────────────────────────────────────────────────
 
-async def startup():
+async def main():
     await delete_webhook()
+    await app.start()
+    print("✅ Bot is running...")
+    await asyncio.Event().wait()
 
 
 if __name__ == "__main__":
-    # Run webhook clear synchronously before handing control to pyrofork
-    asyncio.run(startup())
-    # app.run() creates its own event loop and manages everything internally
-    # This is the most reliable way to run a pyrofork bot
-    app.run()
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(main())
+    except KeyboardInterrupt:
+        pass
+    finally:
+        loop.run_until_complete(app.stop())
+        loop.close()
+        
