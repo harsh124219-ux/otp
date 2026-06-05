@@ -34,10 +34,7 @@ async def main():
         print(f"Bot connected: @{me.username}")
         print("Waiting for updates... Send a message to the bot now.")
         # Run for 60 seconds or until interrupted
-        try:
-            await asyncio.sleep(60)
-        except asyncio.CancelledError:
-            pass
+        await idle()  
     print("--- DIAGNOSTIC END ---")
 
 if __name__ == "__main__":
