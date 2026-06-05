@@ -96,14 +96,25 @@ app = Client(
 #  User Commands
 # ─────────────────────────────────────────────────────────────
 
+@app.on_message(filters.private, group=-1)
+async def global_debug_logger(client: Client, message: Message):
+    """Logs EVERY private message received by the bot before any other handler."""
+    try:
+        user = message.from_user
+        uid = user.id if user else "Unknown"
+        text = (message.text or message.caption or "Non-text message")[:50]
+        print(f"DEBUG: Received message from {uid}: {text}", flush=True)
+    except Exception as e:
+        print(f"DEBUG ERROR in logger: {e}", flush=True)
+
 @app.on_message(
     filters.command(["start", "help", "shop", "orders", "balance", "addbalance", "profile"])
     & filters.private
 )
 async def commands_h(client: Client, message: Message):
     try:
-        # print(f"[CMD] /{message.command[0]} from {message.from_user.id}", flush=True)
         cmd = message.command[0]
+        print(f"EXECUTING: /{cmd} for {message.from_user.id}", flush=True)
         if   cmd == "start":      await start(client, message)
         elif cmd == "help":       await help_menu(client, message)
         elif cmd == "shop":       await shop_menu(client, message)
@@ -111,11 +122,12 @@ async def commands_h(client: Client, message: Message):
         elif cmd in ("balance", "profile"):
             await profile_menu(client, message)
         elif cmd == "addbalance": await deposit_menu(client, message)
+        print(f"COMPLETED: /{cmd} for {message.from_user.id}", flush=True)
     except Exception as e:
-        print(f"[CMD ERROR] {e}", file=sys.stderr, flush=True)
+        print(f"FATAL CMD ERROR: {e}", file=sys.stderr, flush=True)
         traceback.print_exc()
         try:
-            await message.reply_text(f"❌ Error: {e}")
+            await message.reply_text(f"❌ Command Error: {e}")
         except Exception:
             pass
 
@@ -135,9 +147,10 @@ ADMIN_CMDS = [
 async def admin_cmds(client: Client, message: Message):
     try:
         if not is_admin(message.from_user.id):
+            print(f"NON-ADMIN {message.from_user.id} TRIED ADMIN CMD: {message.text}", flush=True)
             return
         cmd = message.command[0]
-        # print(f"[ADMIN CMD] /{cmd} from {message.from_user.id}", flush=True)
+        print(f"EXECUTING ADMIN: /{cmd} for {message.from_user.id}", flush=True)
         if   cmd == "stats":                 await stats(client, message)
         elif cmd == "addbal":                await add_bal(client, message)
         elif cmd == "broadcast":             await broadcast(client, message)
@@ -149,8 +162,9 @@ async def admin_cmds(client: Client, message: Message):
         elif cmd == "login":
             from handlers.session import login_command
             await login_command(client, message)
+        print(f"COMPLETED ADMIN: /{cmd} for {message.from_user.id}", flush=True)
     except Exception as e:
-        print(f"[ADMIN CMD ERROR] {e}", file=sys.stderr, flush=True)
+        print(f"FATAL ADMIN CMD ERROR: {e}", file=sys.stderr, flush=True)
         traceback.print_exc()
         try:
             await message.reply_text(f"❌ Admin Command Error: {e}")
@@ -177,18 +191,22 @@ async def msg_h(client: Client, message: Message):
         from handlers.admin  import admin_states, handle_admin_msg
 
         user_id = message.from_user.id
-        # print(f"[MSG] from {user_id}: {(message.text or '')[:40]}", flush=True)
+        print(f"ROUTING MSG: from {user_id}", flush=True)
 
         if user_id in payment_admin_states:
+            print(f"ROUTING: payment_admin_states for {user_id}", flush=True)
             await handle_admin_rejection_reason(client, message)
         elif user_id in session_states:
+            print(f"ROUTING: session_states for {user_id}", flush=True)
             await handle_session_message(client, message)
         elif is_admin(user_id) and user_id in admin_states:
+            print(f"ROUTING: admin_states for {user_id}", flush=True)
             await handle_admin_msg(client, message)
         else:
+            print(f"ROUTING: generic handle_message for {user_id}", flush=True)
             await handle_message(client, message)
     except Exception as e:
-        print(f"[MSG ERROR] {e}", file=sys.stderr, flush=True)
+        print(f"FATAL MSG ROUTING ERROR: {e}", file=sys.stderr, flush=True)
         traceback.print_exc()
 
 
@@ -207,16 +225,17 @@ async def _run_fsub_check(client: Client, callback: CallbackQuery) -> bool:
 @app.on_callback_query()
 async def cb_h(client: Client, callback: CallbackQuery):
     data = callback.data
-    # print(f"[CB] {data} from {callback.from_user.id}", flush=True)
+    print(f"DEBUG: Callback received: {data} from {callback.from_user.id}", flush=True)
 
     if not (data.startswith("approve_") or data.startswith("reject_")):
         try:
             await callback.answer()
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"DEBUG: callback.answer error: {e}", flush=True)
 
     try:
         if data == "check_fsub_again":
+            print(f"EXECUTING: recheck_fsub_callback for {callback.from_user.id}", flush=True)
             await recheck_fsub_callback(client, callback)
             return
 
@@ -233,6 +252,7 @@ async def cb_h(client: Client, callback: CallbackQuery):
             if not await _run_fsub_check(client, callback):
                 return
 
+        print(f"ROUTING CALLBACK: {data} for {callback.from_user.id}", flush=True)
         if   data == "back_to_main":    await start(client, callback)
         elif data == "open_shop":       await shop_menu(client, callback)
         elif data == "open_deposit":    await deposit_menu(client, callback)

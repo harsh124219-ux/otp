@@ -23,6 +23,7 @@ async def check_fsub(client: Client, message: Message) -> bool:
         return True
 
     try:
+        print(f"DEBUG: Checking FSub for {message.from_user.id} in {fsub}", flush=True)
         await client.get_chat_member(fsub, message.from_user.id)
         return True
     except UserNotParticipant:

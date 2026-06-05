@@ -13,13 +13,16 @@ db     = None
 
 def init_db():
     global client, db
+    print(f"DEBUG: Connecting to MongoDB at {MONGO_URL[:20]}...", flush=True)
     try:
-        client = MongoClient(MONGO_URL)
+        client = MongoClient(MONGO_URL, serverSelectionTimeoutMS=5000)
         client.admin.command("ismaster")
         db = client["otpbot"]
-        print("✅ MongoDB connected successfully!")
-    except ConnectionFailure as e:
-        print(f"❌ MongoDB connection failed: {e}")
+        print("✅ MongoDB connected successfully!", flush=True)
+    except Exception as e:
+        print(f"❌ MongoDB connection failed: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
         client = None
         db     = None
 
