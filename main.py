@@ -12,9 +12,6 @@ from database import is_admin, init_db
 
 from aiohttp import web
 
-async def health(request):
-    return web.Response(text="OK")
-
     
 # ── Robust logging to ensure visibility in all environments
 logging.basicConfig(
