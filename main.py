@@ -17,7 +17,7 @@ logging.basicConfig(
     force=True,
 )
 logger = logging.getLogger("OTPOceanBot")
-# Set pyrogram to INFO to see connection events, DEBUG is too much
+# Set pyrogram to INFO to see connection events
 logging.getLogger("pyrogram").setLevel(logging.INFO)
 
 # ── Handler imports with startup diagnostics ─────────────────
@@ -89,7 +89,7 @@ app = Client(
     api_hash=API_HASH,
     bot_token=_clean_token,
     in_memory=True,
-    max_concurrent_transmissions=3, # Limit concurrency to avoid deadlocks
+    max_concurrent_transmissions=3,
 )
 
 # ─────────────────────────────────────────────────────────────
@@ -107,7 +107,7 @@ async def heartbeat():
                 logger.warning("💓 HEARTBEAT: Bot is DISCONNECTED!")
         except Exception as e:
             logger.error(f"💓 HEARTBEAT ERROR: {e}")
-        await asyncio.sleep(300) # Every 5 minutes
+        await asyncio.sleep(300)
 
 # ─────────────────────────────────────────────────────────────
 #  Raw Update Listener (Low-level Debugging)
@@ -116,8 +116,16 @@ async def heartbeat():
 @app.on_raw_update()
 async def raw_update_handler(client: Client, update: Update, users: dict, chats: dict):
     """Logs EVERY raw update from Telegram to confirm updates are reaching the bot."""
-    # This will log even if no handlers match
     logger.info(f"📥 RAW UPDATE RECEIVED: {type(update).__name__}")
+
+# ─────────────────────────────────────────────────────────────
+#  Diagnostic Command
+# ─────────────────────────────────────────────────────────────
+
+@app.on_message(filters.command("test_diag") & filters.private)
+async def test_diag_h(client: Client, message: Message):
+    logger.info(f"🧪 DIAG COMMAND: Received /test_diag from {message.from_user.id}")
+    await message.reply_text("✅ Bot is responsive to commands!")
 
 # ─────────────────────────────────────────────────────────────
 #  User Commands
@@ -202,7 +210,7 @@ async def admin_cmds(client: Client, message: Message):
 # ─────────────────────────────────────────────────────────────
 
 _all_commands = [
-    "start", "help", "shop", "orders", "balance", "addbalance", "profile"
+    "start", "help", "shop", "orders", "balance", "addbalance", "profile", "test_diag"
 ] + ADMIN_CMDS
 
 @app.on_message(
