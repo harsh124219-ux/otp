@@ -2,6 +2,7 @@ import asyncio
 import logging
 import sys
 import traceback
+import os
 import pyrogram
 import aiohttp
 from pyrogram import Client, filters, idle
