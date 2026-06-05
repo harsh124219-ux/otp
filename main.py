@@ -1,4 +1,5 @@
 import asyncio
+import pyrogram
 import sys
 import aiohttp
 from pyrogram import Client, filters, raw
@@ -273,22 +274,14 @@ async def delete_webhook():
 #  manages the event loop and dispatcher lifecycle.
 # ─────────────────────────────────────────────────────────────
 
+# NEW — lets Pyrogram's own runner manage the event loop
 async def main():
     await delete_webhook()
     await app.start()
-    # Print bot identity so we can confirm the right token is connected
     me = await app.get_me()
     print(f"✅ Bot is running... @{me.username} (id={me.id})")
-    await asyncio.Event().wait()
+    await pyrogram.idle()
 
 
 if __name__ == "__main__":
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        loop.run_until_complete(main())
-    except KeyboardInterrupt:
-        pass
-    finally:
-        loop.run_until_complete(app.stop())
-        loop.close()
+    asyncio.run(main())
