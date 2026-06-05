@@ -343,11 +343,7 @@ async def main():
         try:
             data = await request.json()
             logger.info(f"📥 WEBHOOK UPDATE RECEIVED: {list(data.keys())}")
-            await app.process_update(
-                pyrogram.types.Update(
-                    **await pyrogram.types.Update._parse(app, data, {}, {})
-                )
-            )
+            await app.updates_queue.put(data)
         except Exception as e:
             logger.error(f"❌ Webhook handler error: {e}", exc_info=True)
         return aio_web.Response(text="OK")
@@ -356,7 +352,6 @@ async def main():
         me = await app.get_me()
         logger.info(f"🚀 Bot started: @{me.username}")
 
-        # Set webhook AFTER app is ready
         async with aiohttp.ClientSession() as session:
             resp = await session.get(
                 f"https://api.telegram.org/bot{_clean_token}/setWebhook"
