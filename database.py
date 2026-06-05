@@ -13,19 +13,20 @@ db     = None
 
 def init_db():
     global client, db
-    print(f"DEBUG: Connecting to MongoDB at {MONGO_URL[:20]}...", flush=True)
     try:
-        client = MongoClient(MONGO_URL, serverSelectionTimeoutMS=5000)
-        client.admin.command("ismaster")
+        client = MongoClient(
+            MONGO_URL,
+            serverSelectionTimeoutMS=5000,
+            connectTimeoutMS=5000,
+            socketTimeoutMS=5000,
+        )
+        # Don't call ismaster here — let it connect lazily
         db = client["otpbot"]
-        print("✅ MongoDB connected successfully!", flush=True)
+        print("✅ MongoDB client created!", flush=True)
     except Exception as e:
         print(f"❌ MongoDB connection failed: {e}", flush=True)
-        import traceback
-        traceback.print_exc()
         client = None
-        db     = None
-
+        db = None
 
 # init_db()  # Removed module-level call to avoid redundant connections at import time
 
