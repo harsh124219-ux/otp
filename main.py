@@ -15,16 +15,6 @@ from aiohttp import web
 async def health(request):
     return web.Response(text="OK")
 
-async def start_web():
-    from aiohttp import web
-    app_web = web.Application()
-    app_web.router.add_get("/", lambda r: web.Response(text="OK"))
-    runner = web.AppRunner(app_web)
-    await runner.setup()
-    port = int(os.environ.get("PORT", 8080))
-    site = web.TCPSite(runner, "0.0.0.0", port)
-    await site.start()
-    logger.info(f"✅ Web server started on port {port}")
     
 # ── Robust logging to ensure visibility in all environments
 logging.basicConfig(
@@ -112,18 +102,7 @@ app = Client(
 #  Heartbeat & Diagnostic Tasks
 # ─────────────────────────────────────────────────────────────
 
-async def heartbeat():
-    """Periodically logs that the bot is still alive and connected."""
-    while True:
-        try:
-            if app.is_connected:
-                me = await app.get_me()
-                logger.info(f"💓 HEARTBEAT: Bot @{me.username} is alive and connected.")
-            else:
-                logger.warning("💓 HEARTBEAT: Bot is DISCONNECTED!")
-        except Exception as e:
-            logger.error(f"💓 HEARTBEAT ERROR: {e}")
-        await asyncio.sleep(300)
+
 
 # ─────────────────────────────────────────────────────────────
 #  Raw Update Listener (Low-level Debugging)
@@ -375,41 +354,43 @@ async def main():
     logger.info("✅ Database initialized successfully!")
 
     port = int(os.environ.get("PORT", 8080))
-    app_name = os.environ.get("HEROKU_APP_NAME", "")
+    app_name = os.environ.get("HEROKU_APP_NAME", "otpbot")
     webhook_url = f"https://{app_name}.herokuapp.com/{_clean_token}"
 
-    await app.start()
-    me = await app.get_me()
-    logger.info(f"🚀 Bot started: @{me.username}")
-
-    # Set webhook
-    import aiohttp
+    # Set webhook via Telegram API
     async with aiohttp.ClientSession() as session:
-        await session.get(
+        resp = await session.get(
             f"https://api.telegram.org/bot{_clean_token}/setWebhook"
             f"?url={webhook_url}&drop_pending_updates=true"
         )
-    logger.info(f"✅ Webhook set to {webhook_url}")
+        result = await resp.json()
+        logger.info(f"✅ Webhook result: {result}")
 
-    # Serve webhook
+    # Handle incoming webhook updates
     from aiohttp import web as aio_web
+
     async def handle_update(request):
-        data = await request.json()
-        update = await app.update_queue.put(
-            pyrogram.types.Update.read(data)
-        )
+        try:
+            data = await request.json()
+            logger.info(f"📥 WEBHOOK UPDATE: {list(data.keys())}")
+            await app.handle_update(data)
+        except Exception as e:
+            logger.error(f"❌ Webhook handler error: {e}")
         return aio_web.Response(text="OK")
 
-    server = aio_web.Application()
-    server.router.add_post(f"/{_clean_token}", handle_update)
-    server.router.add_get("/", lambda r: aio_web.Response(text="OK"))
-    runner = aio_web.AppRunner(server)
-    await runner.setup()
-    site = aio_web.TCPSite(runner, "0.0.0.0", port)
-    await site.start()
-    logger.info(f"✅ Webhook server listening on port {port}")
-    await idle()
-    await app.stop()
+    async with app:
+        me = await app.get_me()
+        logger.info(f"🚀 Bot started: @{me.username}")
+
+        server = aio_web.Application()
+        server.router.add_post(f"/{_clean_token}", handle_update)
+        server.router.add_get("/", lambda r: aio_web.Response(text="OK"))
+        runner = aio_web.AppRunner(server)
+        await runner.setup()
+        site = aio_web.TCPSite(runner, "0.0.0.0", port)
+        await site.start()
+        logger.info(f"✅ Listening on port {port}")
+        await idle()
     
 if __name__ == "__main__":
     try:
