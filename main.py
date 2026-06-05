@@ -368,21 +368,18 @@ async def delete_webhook():
 # ─────────────────────────────────────────────────────────────
 
 async def main():
-    # Initialize database FIRST before starting bot
     logger.info("🔄 Initializing database...")
     init_db()
     logger.info("✅ Database initialized successfully!")
-    
-    # Now start the bot
+
+    await start_web()        # ← Heroku needs this first
     await delete_webhook()
     
-    # Start heartbeat in background
     asyncio.create_task(heartbeat())
     
     async with app:
         me = await app.get_me()
         logger.info(f"🚀 Bot is running... @{me.username} (id={me.id})")
-        # Explicitly ensure we are listening
         await idle()
 
 if __name__ == "__main__":
