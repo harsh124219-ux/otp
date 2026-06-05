@@ -9,7 +9,7 @@ from pyrogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineK
 from info import BOT_TOKEN, API_ID, API_HASH
 from database import is_admin, init_db
 
-# ── Route logging to stdout with INFO level
+# ── Robust logging to ensure visibility in all environments
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
@@ -17,7 +17,8 @@ logging.basicConfig(
     force=True,
 )
 logger = logging.getLogger("OTPOceanBot")
-logging.getLogger("pyrogram").setLevel(logging.INFO) # Increased level to see connection logs
+# Set pyrogram to INFO to see connection events, DEBUG is too much
+logging.getLogger("pyrogram").setLevel(logging.INFO)
 
 # ── Handler imports with startup diagnostics ─────────────────
 try:
@@ -81,13 +82,32 @@ except Exception as _e:
 
 _clean_token = BOT_TOKEN.strip()
 
+# Use a specific session name to avoid conflicts if multiple instances are running
 app = Client(
-    "otpbot",
+    "otp_ocean_main",
     api_id=API_ID,
     api_hash=API_HASH,
     bot_token=_clean_token,
     in_memory=True,
+    max_concurrent_transmissions=3, # Limit concurrency to avoid deadlocks
 )
+
+# ─────────────────────────────────────────────────────────────
+#  Heartbeat & Diagnostic Tasks
+# ─────────────────────────────────────────────────────────────
+
+async def heartbeat():
+    """Periodically logs that the bot is still alive and connected."""
+    while True:
+        try:
+            if app.is_connected:
+                me = await app.get_me()
+                logger.info(f"💓 HEARTBEAT: Bot @{me.username} is alive and connected.")
+            else:
+                logger.warning("💓 HEARTBEAT: Bot is DISCONNECTED!")
+        except Exception as e:
+            logger.error(f"💓 HEARTBEAT ERROR: {e}")
+        await asyncio.sleep(300) # Every 5 minutes
 
 # ─────────────────────────────────────────────────────────────
 #  Raw Update Listener (Low-level Debugging)
@@ -96,8 +116,8 @@ app = Client(
 @app.on_raw_update()
 async def raw_update_handler(client: Client, update: Update, users: dict, chats: dict):
     """Logs EVERY raw update from Telegram to confirm updates are reaching the bot."""
-    # We use a simple logger here to avoid cluttering but ensure we know updates are coming
-    logger.debug(f"RAW UPDATE: {type(update).__name__}")
+    # This will log even if no handlers match
+    logger.info(f"📥 RAW UPDATE RECEIVED: {type(update).__name__}")
 
 # ─────────────────────────────────────────────────────────────
 #  User Commands
@@ -110,7 +130,7 @@ async def global_debug_logger(client: Client, message: Message):
         user = message.from_user
         uid = user.id if user else "Unknown"
         text = (message.text or message.caption or "Non-text message")[:50]
-        logger.info(f"DEBUG: Received message from {uid}: {text}")
+        logger.info(f"📩 MESSAGE RECEIVED from {uid}: {text}")
     except Exception as e:
         logger.error(f"DEBUG ERROR in logger: {e}")
 
@@ -121,7 +141,7 @@ async def global_debug_logger(client: Client, message: Message):
 async def commands_h(client: Client, message: Message):
     try:
         cmd = message.command[0]
-        logger.info(f"EXECUTING: /{cmd} for {message.from_user.id}")
+        logger.info(f"⚡ EXECUTING: /{cmd} for {message.from_user.id}")
         if   cmd == "start":      await start(client, message)
         elif cmd == "help":       await help_menu(client, message)
         elif cmd == "shop":       await shop_menu(client, message)
@@ -129,9 +149,9 @@ async def commands_h(client: Client, message: Message):
         elif cmd in ("balance", "profile"):
             await profile_menu(client, message)
         elif cmd == "addbalance": await deposit_menu(client, message)
-        logger.info(f"COMPLETED: /{cmd} for {message.from_user.id}")
+        logger.info(f"✅ COMPLETED: /{cmd} for {message.from_user.id}")
     except Exception as e:
-        logger.error(f"FATAL CMD ERROR: {e}")
+        logger.error(f"❌ FATAL CMD ERROR: {e}")
         traceback.print_exc()
         try:
             await message.reply_text(f"❌ Command Error: {e}")
@@ -153,10 +173,10 @@ ADMIN_CMDS = [
 async def admin_cmds(client: Client, message: Message):
     try:
         if not is_admin(message.from_user.id):
-            logger.warning(f"NON-ADMIN {message.from_user.id} TRIED ADMIN CMD: {message.text}")
+            logger.warning(f"🚫 NON-ADMIN {message.from_user.id} TRIED ADMIN CMD: {message.text}")
             return
         cmd = message.command[0]
-        logger.info(f"EXECUTING ADMIN: /{cmd} for {message.from_user.id}")
+        logger.info(f"👑 EXECUTING ADMIN: /{cmd} for {message.from_user.id}")
         if   cmd == "stats":                 await stats(client, message)
         elif cmd == "addbal":                await add_bal(client, message)
         elif cmd == "broadcast":             await broadcast(client, message)
@@ -168,9 +188,9 @@ async def admin_cmds(client: Client, message: Message):
         elif cmd == "login":
             from handlers.session import login_command
             await login_command(client, message)
-        logger.info(f"COMPLETED ADMIN: /{cmd} for {message.from_user.id}")
+        logger.info(f"✅ COMPLETED ADMIN: /{cmd} for {message.from_user.id}")
     except Exception as e:
-        logger.error(f"FATAL ADMIN CMD ERROR: {e}")
+        logger.error(f"❌ FATAL ADMIN CMD ERROR: {e}")
         traceback.print_exc()
         try:
             await message.reply_text(f"❌ Admin Command Error: {e}")
@@ -196,22 +216,22 @@ async def msg_h(client: Client, message: Message):
         from handlers.admin  import admin_states, handle_admin_msg
 
         user_id = message.from_user.id
-        logger.info(f"ROUTING MSG: from {user_id}")
+        logger.info(f"🛤️ ROUTING MSG: from {user_id}")
 
         if user_id in payment_admin_states:
-            logger.info(f"ROUTING: payment_admin_states for {user_id}")
+            logger.info(f"🛤️ ROUTING: payment_admin_states for {user_id}")
             await handle_admin_rejection_reason(client, message)
         elif user_id in session_states:
-            logger.info(f"ROUTING: session_states for {user_id}")
+            logger.info(f"🛤️ ROUTING: session_states for {user_id}")
             await handle_session_message(client, message)
         elif is_admin(user_id) and user_id in admin_states:
-            logger.info(f"ROUTING: admin_states for {user_id}")
+            logger.info(f"🛤️ ROUTING: admin_states for {user_id}")
             await handle_admin_msg(client, message)
         else:
-            logger.info(f"ROUTING: generic handle_message for {user_id}")
+            logger.info(f"🛤️ ROUTING: generic handle_message for {user_id}")
             await handle_message(client, message)
     except Exception as e:
-        logger.error(f"FATAL MSG ROUTING ERROR: {e}")
+        logger.error(f"❌ FATAL MSG ROUTING ERROR: {e}")
         traceback.print_exc()
 
 # ─────────────────────────────────────────────────────────────
@@ -227,7 +247,7 @@ async def _run_fsub_check(client: Client, callback: CallbackQuery) -> bool:
 @app.on_callback_query()
 async def cb_h(client: Client, callback: CallbackQuery):
     data = callback.data
-    logger.info(f"DEBUG: Callback received: {data} from {callback.from_user.id}")
+    logger.info(f"🔘 CALLBACK RECEIVED: {data} from {callback.from_user.id}")
 
     if not (data.startswith("approve_") or data.startswith("reject_")):
         try:
@@ -237,7 +257,7 @@ async def cb_h(client: Client, callback: CallbackQuery):
 
     try:
         if data == "check_fsub_again":
-            logger.info(f"EXECUTING: recheck_fsub_callback for {callback.from_user.id}")
+            logger.info(f"⚡ EXECUTING: recheck_fsub_callback for {callback.from_user.id}")
             await recheck_fsub_callback(client, callback)
             return
 
@@ -254,7 +274,7 @@ async def cb_h(client: Client, callback: CallbackQuery):
             if not await _run_fsub_check(client, callback):
                 return
 
-        logger.info(f"ROUTING CALLBACK: {data} for {callback.from_user.id}")
+        logger.info(f"🛤️ ROUTING CALLBACK: {data} for {callback.from_user.id}")
         if   data == "back_to_main":    await start(client, callback)
         elif data == "open_shop":       await shop_menu(client, callback)
         elif data == "open_deposit":    await deposit_menu(client, callback)
@@ -293,7 +313,7 @@ async def cb_h(client: Client, callback: CallbackQuery):
             await set_upi_image_start(client, callback)
 
     except Exception as e:
-        logger.error(f"[CB ERROR] data={data!r} error={type(e).__name__}: {e}")
+        logger.error(f"❌ [CB ERROR] data={data!r} error={type(e).__name__}: {e}")
         traceback.print_exc()
         try:
             await callback.answer(f"❌ Error: {str(e)[:100]}", show_alert=True)
@@ -333,10 +353,21 @@ async def main():
     
     # Now start the bot
     await delete_webhook()
+    
+    # Start heartbeat in background
+    asyncio.create_task(heartbeat())
+    
     async with app:
         me = await app.get_me()
-        logger.info(f"✅ Bot is running... @{me.username} (id={me.id})")
+        logger.info(f"🚀 Bot is running... @{me.username} (id={me.id})")
+        # Explicitly ensure we are listening
         await idle()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("👋 Bot stopped by user.")
+    except Exception as e:
+        logger.error(f"💥 CRITICAL ERROR AT RUNTIME: {e}")
+        traceback.print_exc()
