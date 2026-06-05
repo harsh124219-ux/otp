@@ -1,11 +1,24 @@
 import asyncio
+import logging
 import sys
 import pyrogram
 import aiohttp
-from pyrogram import Client, filters, raw
+from pyrogram import Client, filters, idle
 from pyrogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from info import BOT_TOKEN, API_ID, API_HASH
 from database import is_admin
+
+# ── Route ALL Python logging (including pyrogram internals) to stdout
+# This exposes exceptions that pyrogram logs via log.exception() which
+# were previously invisible in Heroku logs.
+logging.basicConfig(
+    level=logging.WARNING,          # WARNING catches pyrogram's log.exception() calls
+    format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+    stream=sys.stdout,
+    force=True,
+)
+# Suppress noisy pyrogram crypto/connection spam but keep errors
+logging.getLogger("pyrogram").setLevel(logging.WARNING)
 
 # ── Handler imports with startup diagnostics ─────────────────
 try:
@@ -68,19 +81,17 @@ app = Client(
     api_id=API_ID,
     api_hash=API_HASH,
     bot_token=_clean_token,
-    in_memory=True,      # prevents stale .session file on Heroku ephemeral disk
+    in_memory=True,
 )
 
 
 # ─────────────────────────────────────────────────────────────
-#  RAW UPDATE LOGGER — prints every single update to Heroku logs
-#  This tells us definitively whether Telegram is delivering updates.
-#  Remove this block once the bot is confirmed working.
+#  RAW UPDATE LOGGER
 # ─────────────────────────────────────────────────────────────
 
 @app.on_raw_update()
 async def raw_logger(client, update, users, chats):
-    print(f"[RAW UPDATE] type={type(update).__name__}")
+    print(f"[RAW UPDATE] type={type(update).__name__}", flush=True)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -92,7 +103,7 @@ async def raw_logger(client, update, users, chats):
     & filters.private
 )
 async def commands_h(client: Client, message: Message):
-    print(f"[CMD] /{message.command[0]} from {message.from_user.id}")
+    print(f"[CMD] /{message.command[0]} from {message.from_user.id}", flush=True)
     cmd = message.command[0]
     if   cmd == "start":      await start(client, message)
     elif cmd == "help":       await help_menu(client, message)
@@ -119,7 +130,7 @@ async def admin_cmds(client: Client, message: Message):
     if not is_admin(message.from_user.id):
         return
     cmd = message.command[0]
-    print(f"[ADMIN CMD] /{cmd} from {message.from_user.id}")
+    print(f"[ADMIN CMD] /{cmd} from {message.from_user.id}", flush=True)
     if   cmd == "stats":                 await stats(client, message)
     elif cmd == "addbal":                await add_bal(client, message)
     elif cmd == "broadcast":             await broadcast(client, message)
@@ -151,7 +162,7 @@ async def msg_h(client: Client, message: Message):
     from handlers.admin  import admin_states, handle_admin_msg
 
     user_id = message.from_user.id
-    print(f"[MSG] from {user_id}: {(message.text or '')[:40]}")
+    print(f"[MSG] from {user_id}: {(message.text or '')[:40]}", flush=True)
 
     if user_id in payment_admin_states:
         await handle_admin_rejection_reason(client, message)
@@ -178,7 +189,7 @@ async def _run_fsub_check(client: Client, callback: CallbackQuery) -> bool:
 @app.on_callback_query()
 async def cb_h(client: Client, callback: CallbackQuery):
     data = callback.data
-    print(f"[CB] {data} from {callback.from_user.id}")
+    print(f"[CB] {data} from {callback.from_user.id}", flush=True)
 
     if not (data.startswith("approve_") or data.startswith("reject_")):
         await callback.answer()
@@ -239,7 +250,7 @@ async def cb_h(client: Client, callback: CallbackQuery):
             await set_upi_image_start(client, callback)
 
     except Exception as e:
-        print(f"[CB ERROR] data={data!r} error={type(e).__name__}: {e}")
+        print(f"[CB ERROR] data={data!r} error={type(e).__name__}: {e}", flush=True)
         try:
             await callback.answer("❌ Something went wrong.", show_alert=True)
         except Exception:
@@ -261,28 +272,22 @@ async def delete_webhook():
             async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                 data = await resp.json()
                 if data.get("result"):
-                    print("✅ Webhook cleared (drop_pending_updates=true)")
+                    print("✅ Webhook cleared (drop_pending_updates=true)", flush=True)
                 else:
-                    print(f"⚠️  deleteWebhook response: {data}")
+                    print(f"⚠️  deleteWebhook response: {data}", flush=True)
     except Exception as e:
-        print(f"⚠️  Could not call deleteWebhook: {e}")
+        print(f"⚠️  Could not call deleteWebhook: {e}", flush=True)
 
 
 # ─────────────────────────────────────────────────────────────
-#  Run — using pyrogram.idle() so Pyrogram's dispatcher gets
-#  full control of the event loop and can process updates.
-#
-#  The old asyncio.Event().wait() was blocking the loop in a way
-#  that starved Pyrogram's internal polling tasks — updates
-#  arrived at the socket but were never picked up (silent crash).
+#  Run
 # ─────────────────────────────────────────────────────────────
 
 async def main():
     await delete_webhook()
-    await app.start()
     me = await app.get_me()
-    print(f"✅ Bot is running... @{me.username} (id={me.id})")
-    await pyrogram.idle()   # ← hands control to Pyrogram's dispatcher
+    print(f"✅ Bot is running... @{me.username} (id={me.id})", flush=True)
+    await idle()
 
 
 if __name__ == "__main__":
