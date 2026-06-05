@@ -1,10 +1,12 @@
 import asyncio
 import sys
+import aiohttp
 from pyrogram import Client, filters
 from pyrogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from info import BOT_TOKEN, API_ID, API_HASH
 from database import is_admin
 
+# ── Handler imports with startup diagnostics ─────────────────
 try:
     from handlers.user import (
         start, profile_menu, orders_menu,
@@ -60,14 +62,37 @@ except Exception as _e:
 
 _clean_token = BOT_TOKEN.strip()
 
-# ── FIX BUG 7: in_memory=True prevents session file issues on Heroku ──
+# ── Bot client ────────────────────────────────────────────────
+# NOTE: NO in_memory=True for bot clients — bots don't need session files
+# and in_memory can interfere with the update dispatcher on some pyrofork builds.
 app = Client(
     "otpbot",
     api_id=API_ID,
     api_hash=API_HASH,
     bot_token=_clean_token,
-    in_memory=True,          # ← FIX: no .session file written to ephemeral disk
 )
+
+
+# ─────────────────────────────────────────────────────────────
+#  Webhook clear — CRITICAL
+#  Pyrogram uses MTProto long-polling. If a Bot API webhook is active,
+#  Telegram sends ALL updates to the webhook URL and NOTHING arrives via
+#  MTProto. The bot appears to run fine but silently receives zero messages.
+#  We delete the webhook via HTTP before starting the dispatcher.
+# ─────────────────────────────────────────────────────────────
+
+async def delete_webhook():
+    url = f"https://api.telegram.org/bot{_clean_token}/deleteWebhook?drop_pending_updates=true"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                data = await resp.json()
+                if data.get("result"):
+                    print("✅ Webhook cleared (drop_pending_updates=true)")
+                else:
+                    print(f"⚠️  deleteWebhook response: {data}")
+    except Exception as e:
+        print(f"⚠️  Could not call deleteWebhook (non-fatal): {e}")
 
 
 # ─────────────────────────────────────────────────────────────
@@ -105,14 +130,14 @@ async def admin_cmds(client: Client, message: Message):
     if not is_admin(message.from_user.id):
         return
     cmd = message.command[0]
-    if   cmd == "stats":                     await stats(client, message)
-    elif cmd == "addbal":                    await add_bal(client, message)
-    elif cmd == "broadcast":                 await broadcast(client, message)
-    elif cmd in ("addadmin", "rmadmin"):     await manage_admins(client, message)
+    if   cmd == "stats":                 await stats(client, message)
+    elif cmd == "addbal":                await add_bal(client, message)
+    elif cmd == "broadcast":             await broadcast(client, message)
+    elif cmd in ("addadmin", "rmadmin"): await manage_admins(client, message)
     elif cmd in ("setfsub", "setupi", "recovery", "fa2"):
         await set_config_cmd(client, message)
-    elif cmd == "addacc":                    await add_acc_start(client, message)
-    elif cmd == "sold":                      await sold_accounts(client, message)
+    elif cmd == "addacc":                await add_acc_start(client, message)
+    elif cmd == "sold":                  await sold_accounts(client, message)
     elif cmd == "login":
         from handlers.session import login_command
         await login_command(client, message)
@@ -163,9 +188,7 @@ async def _run_fsub_check(client: Client, callback: CallbackQuery) -> bool:
 async def cb_h(client: Client, callback: CallbackQuery):
     data = callback.data
 
-    # ── FIX BUG 1: Do NOT call callback.answer() here for payment callbacks
-    # because payment_callback() calls it internally with show_alert=True.
-    # For all other callbacks, answer immediately to dismiss the loading spinner.
+    # payment_callback handles its own callback.answer() with show_alert
     if not (data.startswith("approve_") or data.startswith("reject_")):
         await callback.answer()
 
@@ -187,60 +210,34 @@ async def cb_h(client: Client, callback: CallbackQuery):
             if not await _run_fsub_check(client, callback):
                 return
 
-        if data == "back_to_main":
-            await start(client, callback)
-
-        elif data == "open_shop":
-            await shop_menu(client, callback)
-
-        elif data == "open_deposit":
-            await deposit_menu(client, callback)
-
-        elif data == "open_profile":
-            await profile_menu(client, callback)
-
-        elif data == "open_orders":
-            await orders_menu(client, callback)
-
-        elif data == "open_help":
-            await help_menu(client, callback)
-
+        if   data == "back_to_main":    await start(client, callback)
+        elif data == "open_shop":       await shop_menu(client, callback)
+        elif data == "open_deposit":    await deposit_menu(client, callback)
+        elif data == "open_profile":    await profile_menu(client, callback)
+        elif data == "open_orders":     await orders_menu(client, callback)
+        elif data == "open_help":       await help_menu(client, callback)
         elif data in ("help_user", "help_admin"):
             await help_detail(client, callback)
 
         elif data == "open_rules":
             from info import RULES_TEXT
             from handlers.user import safe_edit
-            await safe_edit(
-                callback, RULES_TEXT,
-                InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="back_to_main")]])
-            )
+            await safe_edit(callback, RULES_TEXT,
+                InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="back_to_main")]]))
 
         elif data == "open_support":
             from info import SUPPORT_TEXT
             from handlers.user import safe_edit
-            await safe_edit(
-                callback, SUPPORT_TEXT,
-                InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="back_to_main")]])
-            )
+            await safe_edit(callback, SUPPORT_TEXT,
+                InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="back_to_main")]]))
 
-        elif data.startswith("sort_opts_"):
-            await sort_options_menu(client, callback)
-
-        elif data.startswith("view_country_"):
-            await view_country_accounts(client, callback)
-
-        elif data.startswith("buy_acc_"):
-            await buy_account(client, callback)
-
-        elif data.startswith("get_otp_"):
-            await get_otp_logic(client, callback)
-
-        elif data.startswith("logout_acc_"):
-            await logout_acc_logic(client, callback)
+        elif data.startswith("sort_opts_"):    await sort_options_menu(client, callback)
+        elif data.startswith("view_country_"): await view_country_accounts(client, callback)
+        elif data.startswith("buy_acc_"):      await buy_account(client, callback)
+        elif data.startswith("get_otp_"):      await get_otp_logic(client, callback)
+        elif data.startswith("logout_acc_"):   await logout_acc_logic(client, callback)
 
         elif data.startswith("approve_") or data.startswith("reject_"):
-            # ── FIX BUG 1: payment_callback handles its own callback.answer()
             await payment_callback(client, callback)
 
         elif data.startswith("setup_"):
@@ -267,6 +264,10 @@ async def cb_h(client: Client, callback: CallbackQuery):
 # ─────────────────────────────────────────────────────────────
 
 async def main():
+    # Clear any active webhook BEFORE starting the MTProto dispatcher.
+    # This is the fix for the "bot runs but receives nothing" issue.
+    await delete_webhook()
+
     async with app:
         print("✅ Bot is running...")
         await asyncio.Event().wait()
