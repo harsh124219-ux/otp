@@ -32,7 +32,7 @@ try:
 except ImportError:
     NewPasswordRequired = Exception
 from info import ADMIN_ID, API_ID, API_HASH
-from database import get_config, accounts_col
+from database import get_config, _col   # ← use _col() not module-level accounts_col
 import asyncio
 from datetime import datetime
 
@@ -578,21 +578,25 @@ async def _finalise_and_save(
         session_string = None
 
     if session_string:
-        # Use upsert so no duplicate documents if phone already exists
-        accounts_col.update_one(
-            {"phone": phone},
-            {"$set": {
-                "session_string": session_string,
-                "country":        country,
-                "price":          price,
-                "status":         "available",
-                "password":       final_password or "",
-                "recovery_email": verified_email or "",
-                "added_at":       datetime.utcnow(),
-            }},
-            upsert=True
-        )
-        result_lines.append(f"✅ Saved to DB — Pool: {country}, Price: ₹{price}")
+        # FIX: use _col() instead of stale module-level accounts_col
+        col = _col("accounts")
+        if col is not None:
+            col.update_one(
+                {"phone": phone},
+                {"$set": {
+                    "session_string": session_string,
+                    "country":        country,
+                    "price":          price,
+                    "status":         "available",
+                    "password":       final_password or "",
+                    "recovery_email": verified_email or "",
+                    "added_at":       datetime.utcnow(),
+                }},
+                upsert=True
+            )
+            result_lines.append(f"✅ Saved to DB — Pool: {country}, Price: ₹{price}")
+        else:
+            result_lines.append("❌ Account NOT saved — DB unavailable")
     else:
         result_lines.append("❌ Account NOT saved — session export failed")
 
@@ -623,29 +627,32 @@ async def _finalise_and_save(
 
 async def _save_account_to_db(bot: Client, admin_id: int, state: dict):
     """Export session and save directly, no automation steps."""
-    phone          = state["phone"]
-    temp_client    = state["temp_client"]
-    country        = state.get("country", "GLOBAL")
-    price          = state.get("price", 0.0)
+    phone            = state["phone"]
+    temp_client      = state["temp_client"]
+    country          = state.get("country", "GLOBAL")
+    price            = state.get("price", 0.0)
     account_password = state.get("account_password", "")
 
     try:
         session_string = await temp_client.export_session_string()
         await temp_client.disconnect()
 
-        accounts_col.update_one(
-            {"phone": phone},
-            {"$set": {
-                "session_string": session_string,
-                "country":        country,
-                "price":          price,
-                "status":         "available",
-                "password":       account_password or "",
-                "recovery_email": "",
-                "added_at":       datetime.utcnow(),
-            }},
-            upsert=True
-        )
+        # FIX: use _col() instead of stale module-level accounts_col
+        col = _col("accounts")
+        if col is not None:
+            col.update_one(
+                {"phone": phone},
+                {"$set": {
+                    "session_string": session_string,
+                    "country":        country,
+                    "price":          price,
+                    "status":         "available",
+                    "password":       account_password or "",
+                    "recovery_email": "",
+                    "added_at":       datetime.utcnow(),
+                }},
+                upsert=True
+            )
         await bot.send_message(
             admin_id,
             f"✅ **Account added (no automation)**\n\n"
