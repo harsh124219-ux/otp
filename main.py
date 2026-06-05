@@ -327,24 +327,7 @@ async def cb_h(client: Client, callback: CallbackQuery):
         except Exception:
             pass
 
-# ─────────────────────────────────────────────────────────────
-#  Webhook clear
-# ─────────────────────────────────────────────────────────────
 
-async def delete_webhook():
-    url = f"https://api.telegram.org/bot{_clean_token}/deleteWebhook?drop_pending_updates=true"
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                data = await resp.json()
-                if data.get("result"):
-                    logger.info("✅ Webhook cleared (drop_pending_updates=true)")
-                else:
-                    logger.warning(f"⚠️  deleteWebhook response: {data}")
-    except Exception as e:
-        logger.error(f"⚠️  Could not call deleteWebhook: {e}")
-
-# ─────────────────────────────────────────────────────────────
 #  Run
 # ─────────────────────────────────────────────────────────────
 
@@ -357,30 +340,33 @@ async def main():
     app_name = os.environ.get("HEROKU_APP_NAME", "otpbot")
     webhook_url = f"https://{app_name}.herokuapp.com/{_clean_token}"
 
-    # Set webhook via Telegram API
-    async with aiohttp.ClientSession() as session:
-        resp = await session.get(
-            f"https://api.telegram.org/bot{_clean_token}/setWebhook"
-            f"?url={webhook_url}&drop_pending_updates=true"
-        )
-        result = await resp.json()
-        logger.info(f"✅ Webhook result: {result}")
-
-    # Handle incoming webhook updates
     from aiohttp import web as aio_web
 
     async def handle_update(request):
         try:
             data = await request.json()
-            logger.info(f"📥 WEBHOOK UPDATE: {list(data.keys())}")
-            await app.handle_update(data)
+            logger.info(f"📥 WEBHOOK UPDATE RECEIVED: {list(data.keys())}")
+            await app.process_update(
+                pyrogram.types.Update(
+                    **await pyrogram.types.Update._parse(app, data, {}, {})
+                )
+            )
         except Exception as e:
-            logger.error(f"❌ Webhook handler error: {e}")
+            logger.error(f"❌ Webhook handler error: {e}", exc_info=True)
         return aio_web.Response(text="OK")
 
     async with app:
         me = await app.get_me()
         logger.info(f"🚀 Bot started: @{me.username}")
+
+        # Set webhook AFTER app is ready
+        async with aiohttp.ClientSession() as session:
+            resp = await session.get(
+                f"https://api.telegram.org/bot{_clean_token}/setWebhook"
+                f"?url={webhook_url}&drop_pending_updates=true"
+            )
+            result = await resp.json()
+            logger.info(f"✅ Webhook result: {result}")
 
         server = aio_web.Application()
         server.router.add_post(f"/{_clean_token}", handle_update)
