@@ -1,7 +1,6 @@
-pyrofork==2.3.69
-TgCrypto-pyrofork
+pyrogram==2.0.106
+TgCrypto
 pymongo[srv]==4.6.1
 dnspython==2.6.1
 python-dotenv
 aiohttp>=3.9.0
- 
