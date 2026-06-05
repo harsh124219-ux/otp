@@ -9,14 +9,14 @@ from pyrogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineK
 from info import BOT_TOKEN, API_ID, API_HASH
 from database import is_admin, init_db
 
-# ── Route ALL Python logging (including pyrogram internals) to stdout
+# ── Route logging to stdout with INFO level
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
     stream=sys.stdout,
     force=True,
 )
-logging.getLogger("pyrogram").setLevel(logging.INFO)
+logging.getLogger("pyrogram").setLevel(logging.WARNING)
 
 # ── Handler imports with startup diagnostics ─────────────────
 try:
@@ -89,13 +89,7 @@ app = Client(
 )
 
 
-# ─────────────────────────────────────────────────────────────
-#  RAW UPDATE LOGGER
-# ─────────────────────────────────────────────────────────────
-
-@app.on_raw_update()
-async def raw_logger(client, update, users, chats):
-    print(f"[RAW UPDATE] type={type(update).__name__}", flush=True)
+# RAW UPDATE LOGGER REMOVED TO REDUCE LOGS
 
 
 # ─────────────────────────────────────────────────────────────
@@ -108,7 +102,7 @@ async def raw_logger(client, update, users, chats):
 )
 async def commands_h(client: Client, message: Message):
     try:
-        print(f"[CMD] /{message.command[0]} from {message.from_user.id}", flush=True)
+        # print(f"[CMD] /{message.command[0]} from {message.from_user.id}", flush=True)
         cmd = message.command[0]
         if   cmd == "start":      await start(client, message)
         elif cmd == "help":       await help_menu(client, message)
@@ -143,7 +137,7 @@ async def admin_cmds(client: Client, message: Message):
         if not is_admin(message.from_user.id):
             return
         cmd = message.command[0]
-        print(f"[ADMIN CMD] /{cmd} from {message.from_user.id}", flush=True)
+        # print(f"[ADMIN CMD] /{cmd} from {message.from_user.id}", flush=True)
         if   cmd == "stats":                 await stats(client, message)
         elif cmd == "addbal":                await add_bal(client, message)
         elif cmd == "broadcast":             await broadcast(client, message)
@@ -183,7 +177,7 @@ async def msg_h(client: Client, message: Message):
         from handlers.admin  import admin_states, handle_admin_msg
 
         user_id = message.from_user.id
-        print(f"[MSG] from {user_id}: {(message.text or '')[:40]}", flush=True)
+        # print(f"[MSG] from {user_id}: {(message.text or '')[:40]}", flush=True)
 
         if user_id in payment_admin_states:
             await handle_admin_rejection_reason(client, message)
@@ -213,7 +207,7 @@ async def _run_fsub_check(client: Client, callback: CallbackQuery) -> bool:
 @app.on_callback_query()
 async def cb_h(client: Client, callback: CallbackQuery):
     data = callback.data
-    print(f"[CB] {data} from {callback.from_user.id}", flush=True)
+    # print(f"[CB] {data} from {callback.from_user.id}", flush=True)
 
     if not (data.startswith("approve_") or data.startswith("reject_")):
         try:

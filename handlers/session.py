@@ -44,7 +44,8 @@ session_states: dict = {}
 # ─────────────────────────────────────────────────────────────
 
 async def login_command(client: Client, message: Message):
-    if message.from_user.id != ADMIN_ID:
+    from database import is_admin
+    if not is_admin(message.from_user.id):
         return
     # Clean up any stale state / disconnected clients
     await _cleanup_state(message.from_user.id)

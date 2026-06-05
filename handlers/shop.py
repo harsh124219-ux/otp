@@ -2,7 +2,7 @@ from pyrogram import Client, enums
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from database import (
     get_balance, deduct_balance, get_accounts_by_country_sorted,
-    update_account_status, create_order, get_order, close_order, accounts_col
+    update_account_status, create_order, get_order, close_order, _col
 )
 from info import API_ID, API_HASH, LOG_GROUP
 # FIX BUG 5: import timezone for aware datetime comparison
@@ -38,7 +38,7 @@ async def shop_menu(client: Client, update):
     is_cb = isinstance(update, CallbackQuery)
     message = update.message if is_cb else update
 
-    countries = accounts_col.distinct("country", {"status": "available"})
+    countries = _col("accounts").distinct("country", {"status": "available"})
 
     if not countries:
         text = "🛒 **SHOP**\n\n❌ No accounts available at the moment.\nCheck back soon!"
@@ -51,7 +51,7 @@ async def shop_menu(client: Client, update):
 
     buttons = []
     for country in sorted(countries):
-        count = accounts_col.count_documents({"status": "available", "country": country})
+        count = _col("accounts").count_documents({"status": "available", "country": country})
         if count > 0:
             buttons.append([
                 InlineKeyboardButton(
@@ -133,7 +133,7 @@ async def buy_account(client: Client, callback: CallbackQuery):
     phone   = callback.data.replace("buy_acc_", "")
     user_id = callback.from_user.id
 
-    account = accounts_col.find_one({"phone": phone, "status": "available"})
+    account = _col("accounts").find_one({"phone": phone, "status": "available"})
     if not account:
         await callback.answer("❌ This account was just sold to someone else!", show_alert=True)
         await shop_menu(client, callback)
@@ -148,7 +148,7 @@ async def buy_account(client: Client, callback: CallbackQuery):
         await callback.answer("❌ Payment error. Please try again.", show_alert=True)
         return
 
-    result = accounts_col.update_one(
+    result = _col("accounts").update_one(
         {"phone": phone, "status": "available"},
         {"$set": {"status": "sold"}}
     )
@@ -249,7 +249,7 @@ async def get_otp_logic(client: Client, callback: CallbackQuery):
 
         await callback.message.reply_text(result_text, reply_markup=markup)
 
-        account_data = accounts_col.find_one({"phone": order["phone"]})
+        account_data = _col("accounts").find_one({"phone": order["phone"]})
         two_fa = account_data.get("password") if account_data else None
         recovery_email = account_data.get("recovery_email") if account_data else None
 
