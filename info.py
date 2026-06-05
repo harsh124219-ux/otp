@@ -5,8 +5,7 @@ load_dotenv()
 
 # ============================================
 #           FALLBACK CONFIGURATIONS
-# ============================================
-HEROKU_APP_NAME = otpbot
+
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "YOUR_BOT_TOKEN")
 API_ID = int(os.environ.get("API_ID", 123456))
 API_HASH = os.environ.get("API_HASH", "YOUR_API_HASH")
