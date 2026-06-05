@@ -379,15 +379,12 @@ async def main():
     asyncio.create_task(heartbeat())
 
     async with app:
-    me = await app.get_me()
-    logger.info(f"🚀 Bot is running... @{me.username} (id={me.id})")
-    await start_web()
-    # Force-flush any pending updates then start polling
-    await app.invoke(
-        pyrogram.raw.functions.updates.GetState()
-    )
-    logger.info("✅ Update state synced")
-    await idle()
+        me = await app.get_me()
+        logger.info(f"🚀 Bot is running... @{me.username} (id={me.id})")
+        await start_web()
+        await app.invoke(pyrogram.raw.functions.updates.GetState())
+        logger.info("✅ Update state synced")
+        await idle()
     
 if __name__ == "__main__":
     try:
