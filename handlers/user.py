@@ -40,13 +40,10 @@ def _main_menu_markup() -> InlineKeyboardMarkup:
 async def start(client: Client, update):
     """
     Handles /start (Message) and back_to_main (CallbackQuery).
+    NO FSUB CHECK - Let user always see main menu first.
     """
     is_cb = isinstance(update, CallbackQuery)
     message_obj = update.message if is_cb else update
-
-    from handlers.fsub import check_fsub
-    if not await check_fsub(client, message_obj):
-        return
 
     first_name = message_obj.chat.first_name or "there"
     text   = START_MESSAGE.format(name=first_name)
@@ -87,12 +84,10 @@ async def help_detail(client: Client, callback: CallbackQuery):
 
 # ─────────────────────────────────────────────────────────────
 #  Profile
-#  FIX BUG 3: handles both Message (/balance, /profile) and CallbackQuery
 # ─────────────────────────────────────────────────────────────
 
 async def profile_menu(client: Client, update):
     is_cb = isinstance(update, CallbackQuery)
-    # Resolve the correct user object regardless of update type
     from_user = update.from_user if is_cb else update.from_user
 
     user   = get_user(from_user.id)
@@ -116,7 +111,6 @@ async def profile_menu(client: Client, update):
 
 # ─────────────────────────────────────────────────────────────
 #  Deposit
-#  FIX BUG 2: handles both Message (/addbalance) and CallbackQuery
 # ─────────────────────────────────────────────────────────────
 
 async def deposit_menu(client: Client, update):
@@ -144,7 +138,6 @@ async def deposit_menu(client: Client, update):
     user_id = update.from_user.id
 
     if is_cb:
-        # CallbackQuery path — delete old message, send fresh
         try:
             await update.message.delete()
         except Exception:
@@ -163,7 +156,6 @@ async def deposit_menu(client: Client, update):
         await update.answer()
 
     else:
-        # Message path — /addbalance command
         if upi_image:
             try:
                 await update.reply_photo(
@@ -179,7 +171,6 @@ async def deposit_menu(client: Client, update):
 
 # ─────────────────────────────────────────────────────────────
 #  Orders
-#  FIX BUG 8: handles both Message (/orders) and CallbackQuery
 # ─────────────────────────────────────────────────────────────
 
 async def orders_menu(client: Client, update):
@@ -220,7 +211,6 @@ async def orders_menu(client: Client, update):
 async def handle_message(client: Client, message: Message):
     user_id = message.from_user.id
 
-    # Admin flow takes priority
     from handlers.admin import admin_states, handle_admin_msg
     if is_admin(user_id) and user_id in admin_states:
         await handle_admin_msg(client, message)
@@ -232,7 +222,6 @@ async def handle_message(client: Client, message: Message):
 
     step = state["step"]
 
-    # ── Step 1: Amount ─────────────────────────────────────────
     if step == "waiting_amount":
         try:
             amount = float(message.text.strip())
@@ -246,7 +235,6 @@ async def handle_message(client: Client, message: Message):
         except ValueError:
             await message.reply_text("❌ Invalid amount. Please enter a positive number (e.g. `200`).")
 
-    # ── Step 2: Screenshot ─────────────────────────────────────
     elif step == "waiting_ss":
         if not message.photo:
             await message.reply_text("📸 Please send your payment screenshot as a **photo**.")
@@ -257,7 +245,6 @@ async def handle_message(client: Client, message: Message):
             "🔖 Now send your **UTR / Transaction ID** (12–22 digits):"
         )
 
-    # ── Step 3: UTR ────────────────────────────────────────────
     elif step == "waiting_utr":
         from database import add_transaction, utr_exists
         utr = message.text.strip()
