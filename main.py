@@ -1,6 +1,6 @@
 import asyncio
-import pyrogram
 import sys
+import pyrogram
 import aiohttp
 from pyrogram import Client, filters, raw
 from pyrogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
@@ -269,18 +269,20 @@ async def delete_webhook():
 
 
 # ─────────────────────────────────────────────────────────────
-#  Run — using app.run() instead of async with app:
-#  app.run() is pyrofork's own recommended runner and correctly
-#  manages the event loop and dispatcher lifecycle.
+#  Run — using pyrogram.idle() so Pyrogram's dispatcher gets
+#  full control of the event loop and can process updates.
+#
+#  The old asyncio.Event().wait() was blocking the loop in a way
+#  that starved Pyrogram's internal polling tasks — updates
+#  arrived at the socket but were never picked up (silent crash).
 # ─────────────────────────────────────────────────────────────
 
-# NEW — lets Pyrogram's own runner manage the event loop
 async def main():
     await delete_webhook()
     await app.start()
     me = await app.get_me()
     print(f"✅ Bot is running... @{me.username} (id={me.id})")
-    await pyrogram.idle()
+    await pyrogram.idle()   # ← hands control to Pyrogram's dispatcher
 
 
 if __name__ == "__main__":
