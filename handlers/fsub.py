@@ -10,16 +10,15 @@ async def check_fsub(client: Client, message: Message) -> bool:
     - Always True for admins.
     - Always True if no FSub channel is configured.
     - Prompts user to join and returns False if they haven't joined.
-
-    NOTE: `message` must be a real pyrogram Message object (not CallbackQuery).
-          For callbacks, pass `callback.message`.
     """
+    # Admins bypass FSub
     if is_admin(message.from_user.id):
         return True
 
     config = get_config()
     fsub = config.get("fsub_channel")
 
+    # No FSub configured → let everyone through automatically
     if not fsub:
         return True
 
@@ -33,21 +32,17 @@ async def check_fsub(client: Client, message: Message) -> bool:
         except Exception:
             link = f"https://t.me/{str(fsub).replace('@', '')}"
 
-        # FIX: callback_data now points to "check_fsub_again" not "back_to_main"
-        # so clicking "I Have Joined" will RE-CHECK membership before showing the menu.
         await message.reply_text(
-            "⚠️ **ACCESS DENIED**\n\n"
-            "You must join our channel to use this bot.\n"
-            "After joining, tap the button below.",
+            "⚠️ **ACCESS DENIED**\n\nYou must join our channel to use this bot.",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("📢 Join Channel", url=link)],
-                [InlineKeyboardButton("✅ I Have Joined — Check Again", callback_data="check_fsub_again")]
+                [InlineKeyboardButton("🔄 I Have Joined", callback_data="back_to_main")]
             ])
         )
         return False
     except Exception as e:
         # Any other API error → don't block the user
-        print(f"FSub check error (non-blocking): {e}")
+        print(f"FSub check error (non-blocking): {e}", flush=True)
         return True
 
 
