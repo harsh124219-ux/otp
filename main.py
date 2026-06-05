@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import sys
+import traceback
 import pyrogram
 import aiohttp
 from pyrogram import Client, filters, idle
@@ -9,16 +10,13 @@ from info import BOT_TOKEN, API_ID, API_HASH
 from database import is_admin, init_db
 
 # ── Route ALL Python logging (including pyrogram internals) to stdout
-# This exposes exceptions that pyrogram logs via log.exception() which
-# were previously invisible in Heroku logs.
 logging.basicConfig(
-    level=logging.WARNING,          # WARNING catches pyrogram's log.exception() calls
+    level=logging.DEBUG,
     format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
     stream=sys.stdout,
     force=True,
 )
-# Suppress noisy pyrogram crypto/connection spam but keep errors
-logging.getLogger("pyrogram").setLevel(logging.WARNING)
+logging.getLogger("pyrogram").setLevel(logging.INFO)
 
 # ── Handler imports with startup diagnostics ─────────────────
 try:
@@ -30,6 +28,7 @@ try:
     print("✅ handlers.user loaded")
 except Exception as _e:
     print(f"❌ FATAL: handlers.user failed to load: {_e}", file=sys.stderr)
+    traceback.print_exc()
     sys.exit(1)
 
 try:
@@ -40,6 +39,7 @@ try:
     print("✅ handlers.shop loaded")
 except Exception as _e:
     print(f"❌ FATAL: handlers.shop failed to load: {_e}", file=sys.stderr)
+    traceback.print_exc()
     sys.exit(1)
 
 try:
@@ -51,6 +51,7 @@ try:
     print("✅ handlers.admin loaded")
 except Exception as _e:
     print(f"❌ FATAL: handlers.admin failed to load: {_e}", file=sys.stderr)
+    traceback.print_exc()
     sys.exit(1)
 
 try:
@@ -58,6 +59,7 @@ try:
     print("✅ handlers.payment loaded")
 except Exception as _e:
     print(f"❌ FATAL: handlers.payment failed to load: {_e}", file=sys.stderr)
+    traceback.print_exc()
     sys.exit(1)
 
 try:
@@ -65,6 +67,7 @@ try:
     print("✅ handlers.fsub loaded")
 except Exception as _e:
     print(f"❌ FATAL: handlers.fsub failed to load: {_e}", file=sys.stderr)
+    traceback.print_exc()
     sys.exit(1)
 
 try:
@@ -72,6 +75,7 @@ try:
     print("✅ handlers.session loaded")
 except Exception as _e:
     print(f"❌ FATAL: handlers.session failed to load: {_e}", file=sys.stderr)
+    traceback.print_exc()
     sys.exit(1)
 
 _clean_token = BOT_TOKEN.strip()
@@ -103,15 +107,23 @@ async def raw_logger(client, update, users, chats):
     & filters.private
 )
 async def commands_h(client: Client, message: Message):
-    print(f"[CMD] /{message.command[0]} from {message.from_user.id}", flush=True)
-    cmd = message.command[0]
-    if   cmd == "start":      await start(client, message)
-    elif cmd == "help":       await help_menu(client, message)
-    elif cmd == "shop":       await shop_menu(client, message)
-    elif cmd == "orders":     await orders_menu(client, message)
-    elif cmd in ("balance", "profile"):
-        await profile_menu(client, message)
-    elif cmd == "addbalance": await deposit_menu(client, message)
+    try:
+        print(f"[CMD] /{message.command[0]} from {message.from_user.id}", flush=True)
+        cmd = message.command[0]
+        if   cmd == "start":      await start(client, message)
+        elif cmd == "help":       await help_menu(client, message)
+        elif cmd == "shop":       await shop_menu(client, message)
+        elif cmd == "orders":     await orders_menu(client, message)
+        elif cmd in ("balance", "profile"):
+            await profile_menu(client, message)
+        elif cmd == "addbalance": await deposit_menu(client, message)
+    except Exception as e:
+        print(f"[CMD ERROR] {e}", file=sys.stderr, flush=True)
+        traceback.print_exc()
+        try:
+            await message.reply_text(f"❌ Error: {e}")
+        except Exception:
+            pass
 
 
 # ─────────────────────────────────────────────────────────────
@@ -127,21 +139,29 @@ ADMIN_CMDS = [
     filters.command(ADMIN_CMDS) & filters.private
 )
 async def admin_cmds(client: Client, message: Message):
-    if not is_admin(message.from_user.id):
-        return
-    cmd = message.command[0]
-    print(f"[ADMIN CMD] /{cmd} from {message.from_user.id}", flush=True)
-    if   cmd == "stats":                 await stats(client, message)
-    elif cmd == "addbal":                await add_bal(client, message)
-    elif cmd == "broadcast":             await broadcast(client, message)
-    elif cmd in ("addadmin", "rmadmin"): await manage_admins(client, message)
-    elif cmd in ("setfsub", "setupi", "recovery", "fa2"):
-        await set_config_cmd(client, message)
-    elif cmd == "addacc":                await add_acc_start(client, message)
-    elif cmd == "sold":                  await sold_accounts(client, message)
-    elif cmd == "login":
-        from handlers.session import login_command
-        await login_command(client, message)
+    try:
+        if not is_admin(message.from_user.id):
+            return
+        cmd = message.command[0]
+        print(f"[ADMIN CMD] /{cmd} from {message.from_user.id}", flush=True)
+        if   cmd == "stats":                 await stats(client, message)
+        elif cmd == "addbal":                await add_bal(client, message)
+        elif cmd == "broadcast":             await broadcast(client, message)
+        elif cmd in ("addadmin", "rmadmin"): await manage_admins(client, message)
+        elif cmd in ("setfsub", "setupi", "recovery", "fa2"):
+            await set_config_cmd(client, message)
+        elif cmd == "addacc":                await add_acc_start(client, message)
+        elif cmd == "sold":                  await sold_accounts(client, message)
+        elif cmd == "login":
+            from handlers.session import login_command
+            await login_command(client, message)
+    except Exception as e:
+        print(f"[ADMIN CMD ERROR] {e}", file=sys.stderr, flush=True)
+        traceback.print_exc()
+        try:
+            await message.reply_text(f"❌ Admin Command Error: {e}")
+        except Exception:
+            pass
 
 
 # ─────────────────────────────────────────────────────────────
@@ -157,21 +177,25 @@ _all_commands = [
     & ~filters.command(_all_commands)
 )
 async def msg_h(client: Client, message: Message):
-    from handlers.session import session_states, handle_session_message
-    from handlers.payment import payment_admin_states, handle_admin_rejection_reason
-    from handlers.admin  import admin_states, handle_admin_msg
+    try:
+        from handlers.session import session_states, handle_session_message
+        from handlers.payment import payment_admin_states, handle_admin_rejection_reason
+        from handlers.admin  import admin_states, handle_admin_msg
 
-    user_id = message.from_user.id
-    print(f"[MSG] from {user_id}: {(message.text or '')[:40]}", flush=True)
+        user_id = message.from_user.id
+        print(f"[MSG] from {user_id}: {(message.text or '')[:40]}", flush=True)
 
-    if user_id in payment_admin_states:
-        await handle_admin_rejection_reason(client, message)
-    elif user_id in session_states:
-        await handle_session_message(client, message)
-    elif is_admin(user_id) and user_id in admin_states:
-        await handle_admin_msg(client, message)
-    else:
-        await handle_message(client, message)
+        if user_id in payment_admin_states:
+            await handle_admin_rejection_reason(client, message)
+        elif user_id in session_states:
+            await handle_session_message(client, message)
+        elif is_admin(user_id) and user_id in admin_states:
+            await handle_admin_msg(client, message)
+        else:
+            await handle_message(client, message)
+    except Exception as e:
+        print(f"[MSG ERROR] {e}", file=sys.stderr, flush=True)
+        traceback.print_exc()
 
 
 # ─────────────────────────────────────────────────────────────
@@ -192,7 +216,10 @@ async def cb_h(client: Client, callback: CallbackQuery):
     print(f"[CB] {data} from {callback.from_user.id}", flush=True)
 
     if not (data.startswith("approve_") or data.startswith("reject_")):
-        await callback.answer()
+        try:
+            await callback.answer()
+        except Exception:
+            pass
 
     try:
         if data == "check_fsub_again":
@@ -250,9 +277,10 @@ async def cb_h(client: Client, callback: CallbackQuery):
             await set_upi_image_start(client, callback)
 
     except Exception as e:
-        print(f"[CB ERROR] data={data!r} error={type(e).__name__}: {e}", flush=True)
+        print(f"[CB ERROR] data={data!r} error={type(e).__name__}: {e}", file=sys.stderr, flush=True)
+        traceback.print_exc()
         try:
-            await callback.answer("❌ Something went wrong.", show_alert=True)
+            await callback.answer(f"❌ Error: {str(e)[:100]}", show_alert=True)
         except Exception:
             pass
         try:
