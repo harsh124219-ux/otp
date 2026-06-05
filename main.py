@@ -6,7 +6,7 @@ import aiohttp
 from pyrogram import Client, filters, idle
 from pyrogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from info import BOT_TOKEN, API_ID, API_HASH
-from database import is_admin
+from database import is_admin, init_db
 
 # ── Route ALL Python logging (including pyrogram internals) to stdout
 # This exposes exceptions that pyrogram logs via log.exception() which
@@ -284,11 +284,18 @@ async def delete_webhook():
 # ─────────────────────────────────────────────────────────────
 
 async def main():
+    # Initialize database FIRST before starting bot
+    print("🔄 Initializing database...", flush=True)
+    init_db()
+    print("✅ Database initialized successfully!", flush=True)
+    
+    # Now start the bot
     await delete_webhook()
-    me = await app.get_me()
-    print(f"✅ Bot is running... @{me.username} (id={me.id})", flush=True)
-    await idle()
+    async with app:
+        me = await app.get_me()
+        print(f"✅ Bot is running... @{me.username} (id={me.id})", flush=True)
+        await idle()
 
 
 if __name__ == "__main__":
-    app.run(main())
+    asyncio.run(main())
