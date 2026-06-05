@@ -210,14 +210,18 @@ async def orders_menu(client: Client, update):
 
 async def handle_message(client: Client, message: Message):
     user_id = message.from_user.id
+    import logging
+    logger = logging.getLogger("OTPOceanBot")
 
     from handlers.admin import admin_states, handle_admin_msg
     if is_admin(user_id) and user_id in admin_states:
+        logger.info(f"USER_HANDLER: Routing {user_id} to admin_states")
         await handle_admin_msg(client, message)
         return
 
     state = user_states.get(user_id)
     if not state:
+        logger.info(f"USER_HANDLER: No state for {user_id}, ignoring message: {message.text[:20] if message.text else 'Non-text'}")
         return
 
     step = state["step"]

@@ -27,7 +27,7 @@ def init_db():
         db     = None
 
 
-init_db()
+# init_db()  # Removed module-level call to avoid redundant connections at import time
 
 # ── Collection accessors (always use these, never module-level vars) ──
 
