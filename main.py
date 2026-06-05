@@ -374,14 +374,42 @@ async def main():
     init_db()
     logger.info("✅ Database initialized successfully!")
 
-    await delete_webhook()
-    asyncio.create_task(heartbeat())
+    port = int(os.environ.get("PORT", 8080))
+    app_name = os.environ.get("HEROKU_APP_NAME", "")
+    webhook_url = f"https://{app_name}.herokuapp.com/{_clean_token}"
 
-    async with app:
-        me = await app.get_me()
-        logger.info(f"🚀 Bot is running... @{me.username} (id={me.id})")
-        await start_web()
-        await idle()
+    await app.start()
+    me = await app.get_me()
+    logger.info(f"🚀 Bot started: @{me.username}")
+
+    # Set webhook
+    import aiohttp
+    async with aiohttp.ClientSession() as session:
+        await session.get(
+            f"https://api.telegram.org/bot{_clean_token}/setWebhook"
+            f"?url={webhook_url}&drop_pending_updates=true"
+        )
+    logger.info(f"✅ Webhook set to {webhook_url}")
+
+    # Serve webhook
+    from aiohttp import web as aio_web
+    async def handle_update(request):
+        data = await request.json()
+        update = await app.update_queue.put(
+            pyrogram.types.Update.read(data)
+        )
+        return aio_web.Response(text="OK")
+
+    server = aio_web.Application()
+    server.router.add_post(f"/{_clean_token}", handle_update)
+    server.router.add_get("/", lambda r: aio_web.Response(text="OK"))
+    runner = aio_web.AppRunner(server)
+    await runner.setup()
+    site = aio_web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+    logger.info(f"✅ Webhook server listening on port {port}")
+    await idle()
+    await app.stop()
     
 if __name__ == "__main__":
     try:
