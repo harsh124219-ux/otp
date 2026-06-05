@@ -1,7 +1,7 @@
 import asyncio
 import sys
 import aiohttp
-from pyrogram import Client, filters
+from pyrogram import Client, filters, raw
 from pyrogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from info import BOT_TOKEN, API_ID, API_HASH
 from database import is_admin
@@ -62,9 +62,6 @@ except Exception as _e:
 
 _clean_token = BOT_TOKEN.strip()
 
-# ── Bot client ────────────────────────────────────────────────
-# NOTE: NO in_memory=True for bot clients — bots don't need session files
-# and in_memory can interfere with the update dispatcher on some pyrofork builds.
 app = Client(
     "otpbot",
     api_id=API_ID,
@@ -74,25 +71,14 @@ app = Client(
 
 
 # ─────────────────────────────────────────────────────────────
-#  Webhook clear — CRITICAL
-#  Pyrogram uses MTProto long-polling. If a Bot API webhook is active,
-#  Telegram sends ALL updates to the webhook URL and NOTHING arrives via
-#  MTProto. The bot appears to run fine but silently receives zero messages.
-#  We delete the webhook via HTTP before starting the dispatcher.
+#  RAW UPDATE LOGGER — prints every single update to Heroku logs
+#  This tells us definitively whether Telegram is delivering updates.
+#  Remove this block once the bot is confirmed working.
 # ─────────────────────────────────────────────────────────────
 
-async def delete_webhook():
-    url = f"https://api.telegram.org/bot{_clean_token}/deleteWebhook?drop_pending_updates=true"
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                data = await resp.json()
-                if data.get("result"):
-                    print("✅ Webhook cleared (drop_pending_updates=true)")
-                else:
-                    print(f"⚠️  deleteWebhook response: {data}")
-    except Exception as e:
-        print(f"⚠️  Could not call deleteWebhook (non-fatal): {e}")
+@app.on_raw_update()
+async def raw_logger(client, update, users, chats):
+    print(f"[RAW UPDATE] type={type(update).__name__}")
 
 
 # ─────────────────────────────────────────────────────────────
@@ -104,6 +90,7 @@ async def delete_webhook():
     & filters.private
 )
 async def commands_h(client: Client, message: Message):
+    print(f"[CMD] /{message.command[0]} from {message.from_user.id}")
     cmd = message.command[0]
     if   cmd == "start":      await start(client, message)
     elif cmd == "help":       await help_menu(client, message)
@@ -130,6 +117,7 @@ async def admin_cmds(client: Client, message: Message):
     if not is_admin(message.from_user.id):
         return
     cmd = message.command[0]
+    print(f"[ADMIN CMD] /{cmd} from {message.from_user.id}")
     if   cmd == "stats":                 await stats(client, message)
     elif cmd == "addbal":                await add_bal(client, message)
     elif cmd == "broadcast":             await broadcast(client, message)
@@ -161,6 +149,7 @@ async def msg_h(client: Client, message: Message):
     from handlers.admin  import admin_states, handle_admin_msg
 
     user_id = message.from_user.id
+    print(f"[MSG] from {user_id}: {(message.text or '')[:40]}")
 
     if user_id in payment_admin_states:
         await handle_admin_rejection_reason(client, message)
@@ -187,8 +176,8 @@ async def _run_fsub_check(client: Client, callback: CallbackQuery) -> bool:
 @app.on_callback_query()
 async def cb_h(client: Client, callback: CallbackQuery):
     data = callback.data
+    print(f"[CB] {data} from {callback.from_user.id}")
 
-    # payment_callback handles its own callback.answer() with show_alert
     if not (data.startswith("approve_") or data.startswith("reject_")):
         await callback.answer()
 
@@ -248,7 +237,7 @@ async def cb_h(client: Client, callback: CallbackQuery):
             await set_upi_image_start(client, callback)
 
     except Exception as e:
-        print(f"[CB ERROR] data={data!r}  error={e}")
+        print(f"[CB ERROR] data={data!r} error={type(e).__name__}: {e}")
         try:
             await callback.answer("❌ Something went wrong.", show_alert=True)
         except Exception:
@@ -260,18 +249,36 @@ async def cb_h(client: Client, callback: CallbackQuery):
 
 
 # ─────────────────────────────────────────────────────────────
-#  Run
+#  Webhook clear
 # ─────────────────────────────────────────────────────────────
 
-async def main():
-    # Clear any active webhook BEFORE starting the MTProto dispatcher.
-    # This is the fix for the "bot runs but receives nothing" issue.
-    await delete_webhook()
+async def delete_webhook():
+    url = f"https://api.telegram.org/bot{_clean_token}/deleteWebhook?drop_pending_updates=true"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                data = await resp.json()
+                if data.get("result"):
+                    print("✅ Webhook cleared (drop_pending_updates=true)")
+                else:
+                    print(f"⚠️  deleteWebhook response: {data}")
+    except Exception as e:
+        print(f"⚠️  Could not call deleteWebhook: {e}")
 
-    async with app:
-        print("✅ Bot is running...")
-        await asyncio.Event().wait()
+
+# ─────────────────────────────────────────────────────────────
+#  Run — using app.run() instead of async with app:
+#  app.run() is pyrofork's own recommended runner and correctly
+#  manages the event loop and dispatcher lifecycle.
+# ─────────────────────────────────────────────────────────────
+
+async def startup():
+    await delete_webhook()
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    # Run webhook clear synchronously before handing control to pyrofork
+    asyncio.run(startup())
+    # app.run() creates its own event loop and manages everything internally
+    # This is the most reliable way to run a pyrofork bot
+    app.run()
