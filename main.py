@@ -16,14 +16,15 @@ async def health(request):
     return web.Response(text="OK")
 
 async def start_web():
-    server = web.Application()
-    server.router.add_get("/", health)
-    runner = web.AppRunner(server)
+    from aiohttp import web
+    app_web = web.Application()
+    app_web.router.add_get("/", lambda r: web.Response(text="OK"))
+    runner = web.AppRunner(app_web)
     await runner.setup()
     port = int(os.environ.get("PORT", 8080))
     site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
-    print(f"✅ Web server started on port {port}", flush=True)
+    logger.info(f"✅ Web server started on port {port}")
     
 # ── Robust logging to ensure visibility in all environments
 logging.basicConfig(
@@ -373,16 +374,15 @@ async def main():
     init_db()
     logger.info("✅ Database initialized successfully!")
 
-    await start_web()        # ← Heroku needs this first
     await delete_webhook()
-    
     asyncio.create_task(heartbeat())
-    
+
     async with app:
         me = await app.get_me()
         logger.info(f"🚀 Bot is running... @{me.username} (id={me.id})")
+        await start_web()    # ← INSIDE async with app, AFTER bot starts
         await idle()
-
+        
 if __name__ == "__main__":
     try:
         asyncio.run(main())
